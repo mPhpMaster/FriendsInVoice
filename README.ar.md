@@ -46,6 +46,10 @@
 - إذا تحديث ديسكورد شال Vencord، شغّل `install.bat` مرة ثانية.
 - **قائمتي** محفوظة بإعدادات Vencord، فبتضل بعد إعادة التشغيل.
 
+## إضافات ثانية
+
+- [AutoSwitchStatus](https://github.com/mPhpMaster/AutoSwitchStatus): بتخليك مخفي تلقائياً لما ما تكون بمكالمة، وبترجعك أونلاين أول ما تدخل وحدة.
+
 ## الرخصة
 
 GPL-3.0-or-later، نفس Vencord.

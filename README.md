@@ -48,6 +48,10 @@ Copy the `friendsInVoice` folder into `Vencord/src/userplugins/`, then run `pnpm
 - If a Discord update removes Vencord, run `install.bat` again.
 - Your *My list* is saved in Vencord's plugin settings, so it survives restarts and is included in Vencord settings sync/backups.
 
+## See also
+
+- [AutoSwitchStatus](https://github.com/mPhpMaster/AutoSwitchStatus): automatically go invisible when you're not in a call, and back online when you join one.
+
 ## License
 
 GPL-3.0-or-later, same as Vencord.
