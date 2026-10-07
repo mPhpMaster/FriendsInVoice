@@ -258,7 +258,8 @@ function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watc
             isFriend: friendIds.has(user.id),
             isWatched: watched.has(user.id),
             isMe,
-            showsOffline: !isMe && !isOnline(PresenceStore.getStatus(user.id)),
+            // Discord only reliably sends presence for friends, so only flag those
+            showsOffline: !isMe && friendIds.has(user.id) && !isOnline(PresenceStore.getStatus(user.id)),
             muted: !!(s.mute || s.selfMute),
             deafened: !!(s.deaf || s.selfDeaf),
             streaming: !!s.selfStream
