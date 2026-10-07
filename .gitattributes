@@ -1,0 +1,4 @@
+# keep shell scripts with Unix line endings (CRLF breaks bash on macOS/Linux)
+*.sh text eol=lf
+*.command text eol=lf
+*.bat text eol=crlf

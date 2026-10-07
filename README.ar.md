@@ -79,7 +79,21 @@ FriendsInVoice إضافة لـ **[Vencord](https://vencord.dev)** ([GitHub](http
 
 إذا زر 🎧 ما طلع فوراً، اضغط على أي سيرفر مرة، أو اعمل `Ctrl+R`.
 
-### خيارات المثبّت
+### ماك ولينكس
+
+1. **نزّل وفك الضغط** عن [آخر إصدار](../../releases/latest) (على الماك دبل كليك على ملف الـ zip).
+2. **شغّل المثبّت**:
+   - **ماك:** دبل كليك على **`install.command`**. أول مرة ممكن الماك يقلك إنه من مطوّر غير معروف: كليك يمين عليه ← **Open** ← **Open**.
+   - **ماك أو لينكس من التيرمنال:** اكتب `bash ` (مع مسافة)، اسحب ملف **`install.sh`** لنافذة التيرمنال، واضغط Enter.
+
+   بيعمل نفس مثبّت ويندوز: بيركّب **Git** (على الماك: Command Line Tools من Apple)، و**Node.js** (على الماك بيعرض يركّب [Homebrew](https://brew.sh) عشانه)، و**pnpm** إذا ناقصين، بينزّل **Vencord** وبيبنيه بـ `~/Vencord` (أو بيلاقي اللي عندك)، بيضيف FriendsInVoice، بيعدّل ديسكورد، وبيعرض يعيد تشغيله. وإذا FriendsInVoice مركّبة أصلاً، بيسألك إذا بدك تشيلها أو تحدّثها.
+3. **فعّل الإضافة**: بديسكورد **User Settings** ← **Vencord** ← **Plugins**، ابحث عن **FriendsInVoice** وشغّلها.
+
+إذا فشل تعديل ديسكورد على الماك، افتح **System Settings ← Privacy & Security ← App Management**، شغّل **Terminal**، وشغّل المثبّت مرة ثانية.
+
+الخيارات نفسها: `bash install.sh --vencord-dir ~/Vencord`، و`--branch ptb` (أو `canary`)، و`--detect-only`.
+
+### خيارات مثبّت ويندوز
 
 شغّلهم من تيرمنال مفتوح بنفس المجلد (`install.bat` بيمرّر الخيارات لـ `install.ps1`):
 
@@ -92,11 +106,11 @@ FriendsInVoice إضافة لـ **[Vencord](https://vencord.dev)** ([GitHub](http
 
 ### التحديث
 
-نزّل الإصدار الجديد، فك الضغط، وشغّل `install.bat` مرة ثانية. رح يقلك إنه FriendsInVoice مركّبة أصلاً ويسألك إذا بدك تشيلها. جاوب **N**، وبعدين **Y** حتى يحدّثها.
+نزّل الإصدار الجديد، فك الضغط، وشغّل `install.bat` مرة ثانية (ماك/لينكس: `install.command` أو `install.sh`). رح يقلك إنه FriendsInVoice مركّبة أصلاً ويسألك إذا بدك تشيلها. جاوب **N**، وبعدين **Y** حتى يحدّثها.
 
 ### إزالة الإضافة
 
-شغّل `install.bat` وجاوب **Y** لما يسألك إذا بدك تشيل FriendsInVoice. هيك بتنشال الإضافة بس، وVencord بيضل مركّب. إذا بدك تشيل Vencord كمان، شوف [شرح Vencord](https://docs.vencord.dev/installing/).
+شغّل `install.bat` (ماك/لينكس: `install.command` أو `install.sh`) وجاوب **Y** لما يسألك إذا بدك تشيل FriendsInVoice. هيك بتنشال الإضافة بس، وVencord بيضل مركّب. إذا بدك تشيل Vencord كمان، شوف [شرح Vencord](https://docs.vencord.dev/installing/).
 
 ### التركيب اليدوي (للمتقدمين)
 
