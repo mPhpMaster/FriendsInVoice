@@ -8,6 +8,7 @@ import "./style.css";
 
 import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { showNotification } from "@api/Notifications";
+import { isPluginEnabled } from "@api/PluginManager";
 import { addServerListElement, removeServerListElement, ServerListRenderPosition } from "@api/ServerList";
 import { definePluginSettings } from "@api/Settings";
 import { getUserSettingLazy } from "@api/UserSettings";
@@ -21,7 +22,7 @@ import { Channel, User } from "@vencord/discord-types";
 import { findByPropsLazy, wreq } from "@webpack";
 import { ChannelActionCreators, ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const REPO = "mPhpMaster/FriendsInVoice";
 
 const cl = classNameFactory("vc-fiv-");
@@ -39,6 +40,18 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Show a notification when a new version of Friends in Voice is released",
         default: true,
+    },
+    stayInVoice: {
+        type: OptionType.BOOLEAN,
+        description: "Stay in voice when you're away: don't get moved to the server's AFK channel or dropped from a DM call",
+        default: false,
+        restartNeeded: true,
+    },
+    neverIdle: {
+        type: OptionType.BOOLEAN,
+        description: "Never go idle: keep your status when you step away from the computer",
+        default: false,
+        restartNeeded: true,
     },
     watchlist: {
         type: OptionType.CUSTOM,
@@ -812,6 +825,9 @@ function Spotlight({ id, data }: { id: string; data: ReturnType<typeof useVoiceD
     );
 }
 
+// values the patches were applied with (they only change after reloading Discord)
+const loadedAway = { stayInVoice: false, neverIdle: false };
+
 function FriendsInVoicePage() {
     usePageOpen(); // re-render when the focused person changes
     const focus = focusUserId;
@@ -937,8 +953,59 @@ function ServerListButton() {
 
 // ---------- context menu ----------
 
+type AwayKey = "stayInVoice" | "neverIdle";
+
+const AWAY_OPTIONS: Record<AwayKey, { label: string; builtIn: string; }> = {
+    stayInVoice: { label: "Stay in voice when away", builtIn: "DisableCallIdle" },
+    neverIdle: { label: "Never go idle", builtIn: "CustomIdle" },
+};
+
+const awayChanged = () => settings.store.stayInVoice !== loadedAway.stayInVoice || settings.store.neverIdle !== loadedAway.neverIdle;
+
+function toggleAway(key: AwayKey) {
+    const on = !settings.store[key];
+    settings.store[key] = on;
+    ContextMenuApi.closeContextMenu();
+
+    const changed = awayChanged();
+    showNotification({
+        title: `${AWAY_OPTIONS[key].label}: ${on ? "ON" : "OFF"}`,
+        body: changed ? "Click here to reload Discord and apply it." : "Back to how it was when Discord started; no reload needed.",
+        onClick: changed ? () => location.reload() : undefined,
+    });
+}
+
+// options shown when you right-click yourself
+function selfMenuItems() {
+    return (
+        <Menu.MenuGroup>
+            {(Object.keys(AWAY_OPTIONS) as AwayKey[]).map(key => {
+                const { label, builtIn } = AWAY_OPTIONS[key];
+                const builtInOn = isPluginEnabled(builtIn);
+                return (
+                    <Menu.MenuCheckboxItem
+                        key={key}
+                        id={`vc-fiv-${key}`}
+                        label={builtInOn ? `${label} (on via ${builtIn})` : label}
+                        checked={builtInOn || settings.store[key]}
+                        disabled={builtInOn}
+                        action={() => toggleAway(key)}
+                    />
+                );
+            })}
+            {awayChanged() && (
+                <Menu.MenuItem id="vc-fiv-reload" label="Reload Discord to apply" action={() => location.reload()} />
+            )}
+        </Menu.MenuGroup>
+    );
+}
+
 const UserContextPatch: NavContextMenuPatchCallback = (children, { user }: { user?: User; }) => {
-    if (!user || user.id === UserStore.getCurrentUser()?.id) return;
+    if (!user) return;
+    if (user.id === UserStore.getCurrentUser()?.id) {
+        children.push(selfMenuItems());
+        return;
+    }
 
     const watched = inList("watchlist", user.id);
     const notifyVoice = inList("notifyVoice", user.id);
@@ -979,6 +1046,38 @@ export default definePlugin({
     dependencies: ["ServerListAPI", "UserSettingsAPI"],
     settings,
 
+    // "Stay in voice" and "Never go idle". Same patches as Vencord's DisableCallIdle / CustomIdle plugins,
+    // skipped when those are enabled so the two don't fight over the same code.
+    patches: [
+        {
+            find: "this.idleTimeout.start(",
+            predicate: () => settings.store.stayInVoice && !isPluginEnabled("DisableCallIdle"),
+            replacement: {
+                match: /this\.idleTimeout\.(start|stop)/g,
+                replace: "$self.noop"
+            }
+        },
+        {
+            find: "handleIdleUpdate(){",
+            predicate: () => settings.store.stayInVoice && !isPluginEnabled("DisableCallIdle"),
+            replacement: {
+                match: "handleIdleUpdate(){",
+                replace: "handleIdleUpdate(){return;"
+            }
+        },
+        {
+            find: 'type:"IDLE",idle:',
+            predicate: () => settings.store.neverIdle && !isPluginEnabled("CustomIdle"),
+            replacement: {
+                // Discord goes idle after `Date.now() - lastActivity > <timeout>`; make the timeout infinite
+                match: /(?<=Date\.now\(\)-\i>)\i\.\i\|\|/,
+                replace: "Infinity||"
+            }
+        },
+    ],
+
+    noop() { },
+
     contextMenus: {
         "user-context": UserContextPatch,
     },
@@ -995,6 +1094,8 @@ export default definePlugin({
     renderButton: ErrorBoundary.wrap(ServerListButton, { noop: true }),
 
     start() {
+        loadedAway.stayInVoice = settings.store.stayInVoice;
+        loadedAway.neverIdle = settings.store.neverIdle;
         startQuietPeriod();
         seedStatuses();
         seedVoiceChannels();

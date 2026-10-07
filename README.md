@@ -40,6 +40,16 @@ Pick specific people to follow, friends or not. Each gets a card showing their o
 
 Right-click a user → **Add to Run away** (or **Remove from Run away**). Every time someone on this list comes online you get a notification; click it to switch your status to **Invisible**. The 🏃 Run away tab shows everyone on the list, with their status, and lets you add or remove people.
 
+### 🛋️ When you're away from the computer
+
+Right-click **yourself** (your name in a voice room, the member list or a message) to find two switches:
+
+- **Stay in voice when away**: Discord won't move you to the server's AFK channel or drop you from a DM call when you step away.
+- **Never go idle**: your status won't switch to Idle when you're away from the computer.
+
+Both are off by default. After changing one, click the notification (or **Reload Discord to apply** in the same menu) to reload Discord. If Vencord's own **DisableCallIdle** or **CustomIdle** plugin is already on, the matching switch shows as handled by it.
+
+These don't stop a server's own bots or rules from kicking inactive people, and you'll still disconnect if your internet drops or the PC goes to sleep.
 ### Updates
 
 The plugin checks GitHub for new releases (at startup and every 6 hours). When one is out you get a notification in Discord; click it to open the download page, then run the installer from the new zip (see [Update](#update)). You can also click **Check for updates** at the bottom of the page. The check can be turned off in the plugin settings.
