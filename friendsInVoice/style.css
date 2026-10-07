@@ -1,0 +1,436 @@
+/* ---------- server list button ---------- */
+.vc-fiv-server-button {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    margin: 4px auto 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--interactive-icon-default, #b5bac1);
+    background: var(--background-mod-normal, rgb(255 255 255 / 6%));
+    transition: border-radius 0.15s, background 0.15s, color 0.15s;
+}
+
+.vc-fiv-server-button:hover,
+.vc-fiv-server-button-open {
+    border-radius: 16px;
+    color: #fff;
+    background: var(--brand-500, #5865f2);
+}
+
+.vc-fiv-badge {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    border: 3px solid var(--background-base-lowest, #1e1f22);
+    background: #23a55a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vc-fiv-badge-watch {
+    background: #f0b232;
+    color: #000;
+}
+
+/* ---------- page ---------- */
+.vc-fiv-page {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background: var(--background-base-lower, var(--background-primary, #313338));
+    border-top-left-radius: 8px;
+    border-left: 1px solid var(--border-subtle, rgb(255 255 255 / 6%));
+    color: var(--text-default, #dbdee1);
+}
+
+.vc-fiv-page-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    min-height: 48px;
+    border-bottom: 1px solid var(--border-subtle, rgb(255 255 255 / 6%));
+    flex-wrap: wrap;
+}
+
+.vc-fiv-page-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-strong, #f2f3f5);
+}
+
+.vc-fiv-tabs {
+    display: flex;
+    gap: 6px;
+    margin-left: 12px;
+}
+
+.vc-fiv-tab {
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-fiv-tab:hover {
+    background: var(--background-mod-subtle, rgb(255 255 255 / 4%));
+    color: var(--text-default, #dbdee1);
+}
+
+.vc-fiv-tab-active {
+    background: var(--background-mod-strong, rgb(255 255 255 / 10%));
+    color: var(--text-strong, #f2f3f5);
+}
+
+.vc-fiv-count {
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 12px;
+    background: rgb(0 0 0 / 25%);
+}
+
+.vc-fiv-page-sub {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-fiv-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted, #949ba4);
+    font-size: 16px;
+}
+
+.vc-fiv-close:hover {
+    background: var(--background-mod-strong, rgb(255 255 255 / 10%));
+    color: #fff;
+}
+
+.vc-fiv-page-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px 24px;
+}
+
+.vc-fiv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+/* ---------- search / add ---------- */
+.vc-fiv-search {
+    width: 100%;
+    max-width: 560px;
+    box-sizing: border-box;
+    padding: 9px 12px;
+    margin-bottom: 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle, rgb(255 255 255 / 10%));
+    background: var(--input-background, rgb(0 0 0 / 20%));
+    color: var(--text-default, #dbdee1);
+    font-size: 14px;
+    outline: none;
+}
+
+.vc-fiv-search:focus {
+    border-color: var(--brand-500, #5865f2);
+}
+
+.vc-fiv-add {
+    position: relative;
+    max-width: 560px;
+}
+
+.vc-fiv-results {
+    margin: -8px 0 14px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle, rgb(255 255 255 / 10%));
+    background: var(--background-base-lowest, #1e1f22);
+}
+
+.vc-fiv-results-empty {
+    margin: -8px 0 14px;
+    font-size: 13px;
+}
+
+.vc-fiv-result {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.vc-fiv-result:hover {
+    background: var(--background-mod-normal, rgb(255 255 255 / 6%));
+}
+
+.vc-fiv-result-user {
+    color: var(--text-muted, #949ba4);
+    font-size: 12px;
+}
+
+.vc-fiv-result-add {
+    margin-left: auto;
+    color: #23a55a;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+/* ---------- cards ---------- */
+.vc-fiv-card {
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--background-mod-subtle, rgb(255 255 255 / 4%));
+    border: 1px solid transparent;
+}
+
+.vc-fiv-card-active {
+    background: var(--background-mod-normal, rgb(255 255 255 / 6%));
+}
+
+.vc-fiv-current {
+    border-color: #23a55a;
+}
+
+.vc-fiv-room-header,
+.vc-fiv-person {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vc-fiv-guild-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    flex-shrink: 0;
+}
+
+.vc-fiv-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--brand-500, #5865f2);
+    color: #fff;
+    font-weight: 700;
+}
+
+.vc-fiv-room-title,
+.vc-fiv-person-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.vc-fiv-room-title {
+    cursor: pointer;
+}
+
+.vc-fiv-room-title:hover .vc-fiv-room-name {
+    text-decoration: underline;
+}
+
+.vc-fiv-place {
+    font-size: 12px;
+    color: var(--text-muted, #949ba4);
+    overflow-wrap: anywhere;
+}
+
+.vc-fiv-room-name,
+.vc-fiv-person-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong, #f2f3f5);
+    overflow-wrap: anywhere;
+}
+
+.vc-fiv-person-where {
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--text-default, #dbdee1);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.vc-fiv-person-where:hover {
+    text-decoration: underline;
+}
+
+.vc-fiv-muted {
+    color: var(--text-muted, #949ba4);
+    cursor: default;
+}
+
+.vc-fiv-muted:hover {
+    text-decoration: none;
+}
+
+.vc-fiv-reason {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0 0 46px;
+}
+
+.vc-fiv-reason-label {
+    font-size: 12px;
+    color: var(--text-muted, #949ba4);
+}
+
+.vc-fiv-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px 2px 2px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgb(35 165 90 / 20%);
+    color: #57f287;
+}
+
+.vc-fiv-chip-watch {
+    background: rgb(240 178 50 / 20%);
+    color: #f0b232;
+}
+
+.vc-fiv-with {
+    margin: 10px 0 0 50px;
+}
+
+.vc-fiv-with-label {
+    font-size: 12px;
+    color: var(--text-muted, #949ba4);
+    margin-bottom: 4px;
+}
+
+.vc-fiv-members {
+    margin: 8px 0 0 46px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.vc-fiv-with .vc-fiv-members {
+    margin: 0;
+}
+
+.vc-fiv-member {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-muted, #949ba4);
+    min-height: 24px;
+}
+
+.vc-fiv-friend {
+    color: var(--text-default, #dbdee1);
+    font-weight: 600;
+}
+
+.vc-fiv-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.vc-fiv-member-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.vc-fiv-pill {
+    padding: 0 5px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    flex-shrink: 0;
+}
+
+.vc-fiv-pill-friend {
+    background: rgb(35 165 90 / 25%);
+    color: #57f287;
+}
+
+.vc-fiv-pill-watch {
+    background: rgb(240 178 50 / 25%);
+    color: #f0b232;
+}
+
+.vc-fiv-pill-live {
+    background: #da373c;
+    color: #fff;
+}
+
+.vc-fiv-tag {
+    font-size: 11px;
+}
+
+.vc-fiv-star {
+    margin-left: auto;
+    padding: 0 4px;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--text-muted, #949ba4);
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.vc-fiv-member:hover .vc-fiv-star,
+.vc-fiv-person .vc-fiv-star,
+.vc-fiv-star-on {
+    opacity: 1;
+}
+
+.vc-fiv-star:hover,
+.vc-fiv-star-on {
+    color: #f0b232;
+}
+
+.vc-fiv-empty {
+    padding: 32px 0;
+    text-align: center;
+    color: var(--text-muted, #949ba4);
+    line-height: 1.6;
+}
+
+.vc-fiv-note {
+    margin-top: 20px;
+    font-size: 12px;
+    color: var(--text-muted, #949ba4);
+}
