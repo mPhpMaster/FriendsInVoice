@@ -535,3 +535,22 @@
 .vc-fiv-link:hover {
     text-decoration: underline;
 }
+/* ---------- v1.2: spotlight ---------- */
+.vc-fiv-spotlight {
+    max-width: 640px;
+    margin-bottom: 18px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 2px solid #f0b232;
+    background: rgb(240 178 50 / 8%);
+}
+
+.vc-fiv-spotlight-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 2px 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #f0b232;
+}

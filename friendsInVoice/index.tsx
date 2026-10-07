@@ -20,7 +20,7 @@ import { Channel, User } from "@vencord/discord-types";
 import { findByPropsLazy } from "@webpack";
 import { ChannelRouter, ChannelStore, GuildMemberStore, GuildStore, Menu, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const REPO = "mPhpMaster/FriendsInVoice";
 
 const cl = classNameFactory("vc-fiv-");
@@ -51,11 +51,15 @@ const settings = definePluginSettings({
         type: OptionType.CUSTOM,
         default: [] as string[],
     },
+    notifyVoice: {
+        type: OptionType.CUSTOM,
+        default: [] as string[],
+    },
 });
 
 // ---------- lists ----------
 
-type ListKey = "watchlist" | "notifyOnline" | "blacklist";
+type ListKey = "watchlist" | "notifyOnline" | "blacklist" | "notifyVoice";
 
 function inList(key: ListKey, id: string) {
     return settings.store[key].includes(id);
@@ -64,13 +68,68 @@ function inList(key: ListKey, id: string) {
 function toggleInList(key: ListKey, id: string) {
     const list = settings.store[key];
     settings.store[key] = list.includes(id) ? list.filter(x => x !== id) : [...list, id];
-    if (key !== "watchlist") lastStatus.set(id, PresenceStore.getStatus(id));
+    if (key === "notifyOnline" || key === "blacklist") lastStatus.set(id, PresenceStore.getStatus(id));
+    if (key === "notifyVoice") lastVoiceChannel.set(id, VoiceStateStore.getVoiceStateForUser(id)?.channelId ?? null);
+}
+
+// ---------- voice join notifications ----------
+
+const lastVoiceChannel = new Map<string, string | null>();
+
+function seedVoiceChannels() {
+    lastVoiceChannel.clear();
+    for (const id of settings.store.notifyVoice) {
+        lastVoiceChannel.set(id, VoiceStateStore.getVoiceStateForUser(id)?.channelId ?? null);
+    }
+}
+
+function notifyJoinedVoice(id: string, channelId: string) {
+    const { user, name } = nameOf(id);
+    const channel = ChannelStore.getChannel(channelId);
+    const where = channel ? describeChannel(channel) : null;
+    const offline = !isOnline(PresenceStore.getStatus(id));
+
+    showNotification({
+        title: `🔊 ${name} joined a voice room${offline ? " (shows offline)" : ""}`,
+        body: where ? `${where.roomName} · ${where.place}. Click to see who's with them.` : "Click to see where they are.",
+        icon: user?.getAvatarURL(undefined, 128),
+        onClick: () => openPageFor(id),
+    });
+}
+
+function onVoiceStateUpdates(voiceStates: { userId: string; channelId?: string | null; }[]) {
+    const list = settings.store.notifyVoice;
+    if (!list.length) return;
+
+    for (const s of voiceStates) {
+        if (!list.includes(s.userId)) continue;
+
+        const now = s.channelId ?? null;
+        const prev = lastVoiceChannel.get(s.userId);
+        lastVoiceChannel.set(s.userId, now);
+
+        // only notify when they go from "not in voice" to "in a room"; moving between rooms isn't a new join
+        if (Date.now() < quietUntil || !now || prev) continue;
+        notifyJoinedVoice(s.userId, now);
+    }
 }
 
 // ---------- online notifications ----------
 
 const lastStatus = new Map<string, string>();
 let quietUntil = 0;
+let reseedTimer: ReturnType<typeof setTimeout> | undefined;
+
+// after (re)connecting, Discord sends presences and voice states in bulk; don't treat those as changes,
+// and re-read where everyone is once things have settled
+function startQuietPeriod() {
+    quietUntil = Date.now() + 15_000;
+    clearTimeout(reseedTimer);
+    reseedTimer = setTimeout(() => {
+        seedStatuses();
+        seedVoiceChannels();
+    }, 15_000);
+}
 
 const isOnline = (status?: string) => !!status && status !== "offline" && status !== "invisible";
 
@@ -103,11 +162,11 @@ function notifyCameOnline(id: string) {
     }
 }
 
-function notifyBlacklisted(id: string) {
+function notifyRunAway(id: string) {
     const { user, name } = nameOf(id);
     showNotification({
-        title: `🚫 ${name} is online`,
-        body: "They're on your blacklist. Click to go invisible.",
+        title: `🏃 ${name} is online`,
+        body: "They're on your Run away list. Click to go invisible.",
         icon: user?.getAvatarURL(undefined, 128),
         onClick: async () => {
             await StatusSettings.updateSetting("invisible");
@@ -129,7 +188,7 @@ function onPresenceChange() {
         if (Date.now() < quietUntil || prev === undefined) continue;
         if (isOnline(prev) || !isOnline(status)) continue;
 
-        if (blacklist.includes(id)) notifyBlacklisted(id);
+        if (blacklist.includes(id)) notifyRunAway(id);
         if (notifyOnline.includes(id)) notifyCameOnline(id);
     }
 }
@@ -180,11 +239,24 @@ async function checkForUpdate(manual = false) {
 // ---------- page open state ----------
 
 let pageOpen = false;
+// the person highlighted at the top of the page (set when clicking a "joined a voice room" notification)
+let focusUserId: string | null = null;
 const pageListeners = new Set<() => void>();
 
 function setPageOpen(open: boolean) {
     pageOpen = open;
+    if (!open) focusUserId = null;
     pageListeners.forEach(fn => fn());
+}
+
+function setFocusUser(id: string | null) {
+    focusUserId = id;
+    pageListeners.forEach(fn => fn());
+}
+
+function openPageFor(id: string) {
+    focusUserId = id;
+    setPageOpen(true);
 }
 
 function usePageOpen() {
@@ -279,10 +351,11 @@ function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watc
     };
 }
 
-function collect(watchlist: string[]) {
+function collect(watchlist: string[], extra: string | null) {
     const friendIds = new Set(RelationshipStore.getFriendIDs());
     const watched = new Set(watchlist);
     const myId = UserStore.getCurrentUser()?.id;
+    const tracked = (id: string) => friendIds.has(id) || watched.has(id) || id === extra;
 
     const statesByChannel = new Map<string, any[]>();
     for (const states of Object.values(VoiceStateStore.getAllVoiceStates() ?? {})) {
@@ -298,7 +371,7 @@ function collect(watchlist: string[]) {
     const roomByUser = new Map<string, Room>();
 
     for (const [channelId, states] of statesByChannel) {
-        if (!states.some(s => s.userId !== myId && (friendIds.has(s.userId) || watched.has(s.userId)))) continue;
+        if (!states.some(s => s.userId !== myId && tracked(s.userId))) continue;
 
         const channel = ChannelStore.getChannel(channelId);
         if (!channel) continue;
@@ -316,12 +389,12 @@ function collect(watchlist: string[]) {
     return { rooms, roomByUser, friendIds };
 }
 
-function useVoiceData() {
+function useVoiceData(extra: string | null = null) {
     const { watchlist } = settings.use(["watchlist"]);
     const voiceVersion = useStateFromStores([VoiceStateStore], () => VoiceStateStore.getVoiceStateVersion());
     const relVersion = useStateFromStores([RelationshipStore], () => RelationshipStore.getVersion());
     const myChannel = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getVoiceChannelId());
-    const data = useMemo(() => collect(watchlist), [voiceVersion, relVersion, watchlist]);
+    const data = useMemo(() => collect(watchlist, extra), [voiceVersion, relVersion, watchlist, extra]);
     return { ...data, watchlist, myChannel };
 }
 
@@ -604,6 +677,12 @@ function AlertsTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
     return (
         <div className={cl("sections")}>
             <AlertSection
+                listKey="notifyVoice"
+                title="🔊 Notify me when in voice"
+                description="You get a notification every time one of them joins a voice room you can see, even if their status shows offline — click it to see where they are and who's with them."
+                friendIds={data.friendIds}
+            />
+            <AlertSection
                 listKey="notifyOnline"
                 title="🔔 Notify me when online"
                 description={notifyOnce
@@ -611,10 +690,17 @@ function AlertsTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
                     : "You get a notification every time one of them comes online — click it to open your DM."}
                 friendIds={data.friendIds}
             />
+        </div>
+    );
+}
+
+function RunAwayTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
+    return (
+        <div className={cl("sections")}>
             <AlertSection
                 listKey="blacklist"
-                title="🚫 Blacklist"
-                description="You get a notification every time one of them comes online — click it to switch your status to Invisible."
+                title="🏃 Run away"
+                description="You get a notification every time one of them comes online — click it to switch your status to Invisible. Right-click anyone → Add to Run away / Remove from Run away."
                 friendIds={data.friendIds}
             />
         </div>
@@ -623,7 +709,7 @@ function AlertsTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
 
 // ---------- page ----------
 
-type Tab = "voice" | "mine" | "alerts";
+type Tab = "voice" | "mine" | "alerts" | "runaway";
 
 function getNav() {
     return document.querySelector<HTMLElement>(`.${cl("server-button")}`)?.closest("nav") ?? null;
@@ -634,11 +720,32 @@ function getContentRect() {
     return { left: r?.right ?? 72, top: r?.top ?? 0 };
 }
 
+function Spotlight({ id, data }: { id: string; data: ReturnType<typeof useVoiceData>; }) {
+    return (
+        <div className={cl("spotlight")}>
+            <div className={cl("spotlight-head")}>
+                <span>📍 Where they are now</span>
+                <span className={cl("remove")} title="Hide" onClick={() => setFocusUser(null)}>✕</span>
+            </div>
+            <WatchedCard id={id} room={data.roomByUser.get(id)} myChannel={data.myChannel} />
+        </div>
+    );
+}
+
 function FriendsInVoicePage() {
-    const data = useVoiceData();
-    const { notifyOnline, blacklist } = settings.use(["notifyOnline", "blacklist"]);
+    usePageOpen(); // re-render when the focused person changes
+    const focus = focusUserId;
+    const data = useVoiceData(focus);
+    const { notifyOnline, blacklist, notifyVoice } = settings.use(["notifyOnline", "blacklist", "notifyVoice"]);
     const [tab, setTab] = useState<Tab>("voice");
     const [rect, setRect] = useState(getContentRect);
+    const bodyRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!focus) return;
+        setTab("voice");
+        bodyRef.current?.scrollTo({ top: 0 });
+    }, [focus]);
 
     const guildId = useStateFromStores([SelectedGuildStore], () => SelectedGuildStore.getGuildId());
     const channelId = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getChannelId());
@@ -685,16 +792,21 @@ function FriendsInVoicePage() {
                         ⭐ My list <span className={cl("count")}>{watchedInVoice}/{data.watchlist.length}</span>
                     </div>
                     <div className={cl("tab", tab === "alerts" && "tab-active")} onClick={() => setTab("alerts")}>
-                        🔔 Alerts <span className={cl("count")}>{notifyOnline.length + blacklist.length}</span>
+                        🔔 Alerts <span className={cl("count")}>{notifyVoice.length + notifyOnline.length}</span>
+                    </div>
+                    <div className={cl("tab", tab === "runaway" && "tab-active")} onClick={() => setTab("runaway")}>
+                        🏃 Run away <span className={cl("count")}>{blacklist.length}</span>
                     </div>
                 </div>
                 <div className={cl("page-sub")}>{friendsInVoice} friend{friendsInVoice === 1 ? "" : "s"} in voice</div>
                 <div className={cl("close")} onClick={() => setPageOpen(false)} title="Close (Esc)">✕</div>
             </div>
-            <div className={cl("page-body")}>
+            <div className={cl("page-body")} ref={bodyRef}>
+                {focus && <Spotlight id={focus} data={data} />}
                 {tab === "voice" && <VoiceTab data={data} />}
                 {tab === "mine" && <MyListTab data={data} />}
                 {tab === "alerts" && <AlertsTab data={data} />}
+                {tab === "runaway" && <RunAwayTab data={data} />}
                 <div className={cl("note")}>
                     Discord only shares voice activity and online status for servers you're also in, so people in servers you haven't joined won't show up.
                     {" · "}v{VERSION}{" · "}
@@ -749,6 +861,7 @@ const UserContextPatch: NavContextMenuPatchCallback = (children, { user }: { use
     if (!user || user.id === UserStore.getCurrentUser()?.id) return;
 
     const watched = inList("watchlist", user.id);
+    const notifyVoice = inList("notifyVoice", user.id);
     const notify = inList("notifyOnline", user.id);
     const blocked = inList("blacklist", user.id);
 
@@ -760,13 +873,18 @@ const UserContextPatch: NavContextMenuPatchCallback = (children, { user }: { use
                 action={() => toggleInList("watchlist", user.id)}
             />
             <Menu.MenuItem
+                id="vc-fiv-notify-voice"
+                label={notifyVoice ? "Stop notifying me when in voice" : "Notify me when in voice"}
+                action={() => toggleInList("notifyVoice", user.id)}
+            />
+            <Menu.MenuItem
                 id="vc-fiv-notify"
                 label={notify ? "Stop notifying me when online" : "Notify me when online"}
                 action={() => toggleInList("notifyOnline", user.id)}
             />
             <Menu.MenuItem
                 id="vc-fiv-blacklist"
-                label={blocked ? "Remove from blacklist" : "Add to blacklist"}
+                label={blocked ? "Remove from Run away" : "Add to Run away"}
                 color={blocked ? undefined : "danger"}
                 action={() => toggleInList("blacklist", user.id)}
             />
@@ -776,7 +894,7 @@ const UserContextPatch: NavContextMenuPatchCallback = (children, { user }: { use
 
 export default definePlugin({
     name: "FriendsInVoice",
-    description: "A page showing which voice rooms your friends are in and one-click join, plus My list, online alerts and a blacklist",
+    description: "A page showing which voice rooms your friends are in and one-click join, plus My list, voice/online alerts and a Run away list",
     authors: [{ name: "mPhpMaster", id: 0n }],
     dependencies: ["ServerListAPI", "UserSettingsAPI"],
     settings,
@@ -787,15 +905,19 @@ export default definePlugin({
 
     flux: {
         CONNECTION_OPEN() {
-            quietUntil = Date.now() + 15_000;
+            startQuietPeriod();
+        },
+        VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; }[]; }) {
+            onVoiceStateUpdates(voiceStates);
         },
     },
 
     renderButton: ErrorBoundary.wrap(ServerListButton, { noop: true }),
 
     start() {
-        quietUntil = Date.now() + 15_000;
+        startQuietPeriod();
         seedStatuses();
+        seedVoiceChannels();
         PresenceStore.addChangeListener(onPresenceChange);
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
@@ -808,6 +930,7 @@ export default definePlugin({
         setPageOpen(false);
         PresenceStore.removeChangeListener(onPresenceChange);
         clearInterval(updateTimer);
+        clearTimeout(reseedTimer);
         removeServerListElement(ServerListRenderPosition.Above, this.renderButton);
     },
 });

@@ -1,0 +1,42 @@
+name: 🐞 Bug report
+description: Something in FriendsInVoice doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please blur other people's names and avatars in screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      description: Shown at the bottom of the Friends in Voice page (e.g. v1.2.0)
+    validations:
+      required: true
+  - type: dropdown
+    id: branch
+    attributes:
+      label: Discord branch
+      options: [Stable, PTB, Canary]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Friends in Voice page
+        2. Click …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors from the console (optional)
+      description: Press Ctrl+Shift+I in Discord, open the Console tab, and paste any red errors mentioning FriendsInVoice.
+      render: text

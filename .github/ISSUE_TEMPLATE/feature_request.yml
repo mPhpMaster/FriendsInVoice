@@ -1,0 +1,25 @@
+name: ✨ Feature request
+description: Suggest an idea for FriendsInVoice
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the problem or the use case.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How should it work?
+      description: Describe the feature you have in mind.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This only uses information Discord already shows me, and doesn't try to get around Discord's privacy.
+          required: true
