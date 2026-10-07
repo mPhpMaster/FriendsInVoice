@@ -24,7 +24,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$PluginName = "friendsInVoice"
+# ---- the only plugin-specific lines ----
+$PluginName = "friendsInVoice"   # folder name inside Vencord/src/userplugins
+$DisplayName = "FriendsInVoice"  # name shown in Settings -> Vencord -> Plugins
+# -----------------------------------------
 $PluginSrc = Join-Path $PSScriptRoot $PluginName
 
 function Info($msg) { Write-Host $msg -ForegroundColor Cyan }
@@ -151,7 +154,7 @@ Write-Host ""
 Write-Host "Discord ($Branch):        $DiscordRoot"
 Write-Host "Vencord source folder:    $VencordDir $(if ($vencordInstalled) { '(installed)' } else { '(not installed yet)' })"
 Write-Host "Discord loads Vencord:    $(if ($patchedDir) { $patchedDir } else { 'no (or the prebuilt Vencord)' })"
-Write-Host "FriendsInVoice installed: $(if ($pluginInstalled) { 'yes' } else { 'no' })"
+Write-Host "$DisplayName installed: $(if ($pluginInstalled) { 'yes' } else { 'no' })"
 Write-Host ""
 
 if ($DetectOnly) { return }
@@ -159,12 +162,12 @@ if ($DetectOnly) { return }
 # ---------- plugin already installed: uninstall or update ----------
 
 if ($pluginInstalled) {
-    if (Ask "FriendsInVoice is already installed. Do you want to UNINSTALL it?" $false) {
+    if (Ask "$DisplayName is already installed. Do you want to UNINSTALL it?" $false) {
         Info "Removing the plugin..."
         Remove-Item -Recurse -Force $pluginDir
         Ensure-Tools
         Build-Vencord $VencordDir
-        Ok "FriendsInVoice was uninstalled. (Vencord itself is still installed.)"
+        Ok "$DisplayName was uninstalled. (Vencord itself is still installed.)"
         Restart-Discord
         return
     }
@@ -185,7 +188,7 @@ if (-not $vencordInstalled) {
     if ($LASTEXITCODE) { throw "Downloading Vencord failed." }
 }
 
-Info "Adding FriendsInVoice to Vencord..."
+Info "Adding $DisplayName to Vencord..."
 New-Item -ItemType Directory -Force (Split-Path $pluginDir) | Out-Null
 New-Item -ItemType Directory -Force $pluginDir | Out-Null
 Copy-Item -Force (Join-Path $PluginSrc "*") $pluginDir
@@ -196,6 +199,6 @@ if (-not $discordPatched) { Inject-Vencord $VencordDir }
 
 Write-Host ""
 Ok "Done!"
-Ok "After Discord opens: Settings -> Vencord -> Plugins, search 'FriendsInVoice' and turn it on."
+Ok "After Discord opens: Settings -> Vencord -> Plugins, search '$DisplayName' and turn it on."
 Ok "(If it was already on, it's updated now.)"
 Restart-Discord
