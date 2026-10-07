@@ -15,12 +15,11 @@ import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { copyToClipboard } from "@utils/clipboard";
 import { classNameFactory } from "@utils/css";
-import { openPrivateChannel } from "@utils/discord";
 import { canonicalizeMatch } from "@utils/patches";
 import definePlugin, { OptionType } from "@utils/types";
 import { Channel, User } from "@vencord/discord-types";
 import { findByPropsLazy, wreq } from "@webpack";
-import { ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
+import { ChannelActionCreators, ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 const VERSION = "1.3.0";
 const REPO = "mPhpMaster/FriendsInVoice";
@@ -58,6 +57,12 @@ const settings = definePluginSettings({
         default: [] as string[],
     },
 });
+
+// Discord's openPrivateChannel now takes { recipientIds }. Vencord's helper still passes a bare user id,
+// which Discord reads as "no recipients" and creates an empty group DM, so call Discord directly.
+function openPrivateChannel(userId: string) {
+    return ChannelActionCreators.openPrivateChannel({ recipientIds: [userId] });
+}
 
 // ---------- lists ----------
 
