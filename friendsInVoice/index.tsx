@@ -13,14 +13,16 @@ import { definePluginSettings } from "@api/Settings";
 import { getUserSettingLazy } from "@api/UserSettings";
 import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
+import { copyToClipboard } from "@utils/clipboard";
 import { classNameFactory } from "@utils/css";
 import { openPrivateChannel } from "@utils/discord";
+import { canonicalizeMatch } from "@utils/patches";
 import definePlugin, { OptionType } from "@utils/types";
 import { Channel, User } from "@vencord/discord-types";
-import { findByPropsLazy } from "@webpack";
-import { ChannelRouter, ChannelStore, GuildMemberStore, GuildStore, Menu, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
+import { findByPropsLazy, wreq } from "@webpack";
+import { ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const REPO = "mPhpMaster/FriendsInVoice";
 
 const cl = classNameFactory("vc-fiv-");
@@ -418,6 +420,74 @@ function openRoomChannel(channel: Channel) {
 
 // ---------- small components ----------
 
+// ---------- clicking people: left = DM, right = Discord's user menu ----------
+
+// Discord lazy-loads its generic user context menu. Find the loader by the analytics name next to it
+// (stable across builds, unlike module ids), load its chunks, and use the menu component directly.
+const UserMenuLoaderRe = canonicalizeMatch(/Promise\.all\(\[((?:\i\.e\("?\w+"?\),?)+)\]\)\.then\(\i\.bind\(\i,"?(\w+)"?\)\);return \i=>\(0,\i\.jsx\)\(\i,\{\.\.\.\i,user:\i,[^}]{0,80}?\("UserGenericContextMenu"/);
+
+let DiscordUserMenu: React.ComponentType<any> | null = null;
+
+async function loadDiscordUserMenu() {
+    if (DiscordUserMenu) return DiscordUserMenu;
+
+    for (const factory of Object.values(wreq.m)) {
+        const code = String(factory);
+        if (!code.includes('"UserGenericContextMenu"')) continue;
+
+        const match = code.match(UserMenuLoaderRe);
+        if (!match) continue;
+
+        await Promise.all(Array.from(match[1].matchAll(/\.e\("?(\w+)"?\)/g), c => wreq.e(c[1] as any)));
+        const menu = (wreq(match[2] as any) as any)?.default;
+        if (menu) return (DiscordUserMenu = menu);
+    }
+
+    throw new Error("Couldn't find Discord's user context menu");
+}
+
+// used if Discord's own menu can't be found (e.g. after a big Discord update)
+function FallbackUserMenu({ user, onClose }: { user: User; onClose?(): void; }) {
+    const extraProps = { contextMenuAPIArguments: [{ user }] } as any; // lets Vencord plugins (incl. this one) add their items
+    return (
+        <Menu.Menu navId="user-context" onClose={onClose ?? ContextMenuApi.closeContextMenu} {...extraProps}>
+            <Menu.MenuItem id="vc-fiv-profile" label="Profile" action={() => openUserProfileModal({ userId: user.id })} />
+            <Menu.MenuItem id="vc-fiv-message" label="Message" action={() => openDm(user.id)} />
+            <Menu.MenuItem id="vc-fiv-copy-id" label="Copy User ID" action={() => copyToClipboard(user.id)} />
+        </Menu.Menu>
+    );
+}
+
+function openUserMenu(event: React.MouseEvent, user: User) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    ContextMenuApi.openContextMenuLazy(event, async () => {
+        try {
+            const UserMenu = await loadDiscordUserMenu();
+            return (props: any) => <UserMenu {...props} user={user} />;
+        } catch {
+            return (props: any) => <FallbackUserMenu {...props} user={user} />;
+        }
+    });
+}
+
+function openDm(id: string) {
+    setPageOpen(false);
+    openPrivateChannel(id);
+}
+
+/** Props that make an element open a DM on click and Discord's user menu on right-click */
+function personProps(user: User | null | undefined) {
+    if (!user) return {};
+    return {
+        role: "button",
+        title: "Click to message · Right-click for options",
+        onClick: (e: React.MouseEvent) => { e.stopPropagation(); openDm(user.id); },
+        onContextMenu: (e: React.MouseEvent) => openUserMenu(e, user),
+    };
+}
+
 function Avatar({ user, size = 22 }: { user: User; size?: number; }) {
     return <img className={cl("avatar")} style={{ width: size, height: size }} src={user.getAvatarURL(undefined, 64)} alt="" />;
 }
@@ -459,7 +529,10 @@ function StarButton({ userId }: { userId: string; }) {
 
 function MemberRow({ member }: { member: Member; }) {
     return (
-        <div className={cl("member", (member.isFriend || member.isWatched) && "friend")}>
+        <div
+            className={cl("member", (member.isFriend || member.isWatched) && "friend", !member.isMe && "clickable")}
+            {...(member.isMe ? {} : personProps(member.user))}
+        >
             <Avatar user={member.user} />
             <span className={cl("member-name")}>
                 {member.name}{member.isMe && " (you)"}
@@ -505,7 +578,7 @@ function RoomCard({ room, inThisRoom }: { room: Room; inThisRoom: boolean; }) {
             <div className={cl("reason")}>
                 <span className={cl("reason-label")}>Here because of:</span>
                 {room.reasons.map(m => (
-                    <span key={m.user.id} className={cl("chip", !m.isFriend && "chip-watch")}>
+                    <span key={m.user.id} className={cl("chip", !m.isFriend && "chip-watch", "clickable")} {...personProps(m.user)}>
                         <Avatar user={m.user} size={18} />
                         {m.name}
                     </span>
@@ -544,7 +617,7 @@ function AddPeople({ listKey, friendIds, placeholder }: { listKey: ListKey; frie
             {results.length > 0 && (
                 <div className={cl("results")}>
                     {results.map(u => (
-                        <div key={u.id} className={cl("result")} onClick={() => { toggleInList(listKey, u.id); setQuery(""); }}>
+                        <div key={u.id} className={cl("result")} onClick={() => { toggleInList(listKey, u.id); setQuery(""); }} onContextMenu={e => openUserMenu(e, u)}>
                             <Avatar user={u} size={24} />
                             <span className={cl("member-name")}>{displayName(u, null)}</span>
                             <span className={cl("result-user")}>@{u.username}</span>
@@ -602,9 +675,11 @@ function WatchedCard({ id, room, myChannel }: { id: string; room?: Room; myChann
     return (
         <div className={cl("card", room && "card-active", inThisRoom && "current")}>
             <div className={cl("person")}>
-                {user ? <Avatar user={user} size={40} /> : <div className={cl("avatar", "placeholder")} style={{ width: 40, height: 40 }} />}
+                {user
+                    ? <span className={cl("clickable")} {...personProps(user)}><Avatar user={user} size={40} /></span>
+                    : <div className={cl("avatar", "placeholder")} style={{ width: 40, height: 40 }} />}
                 <div className={cl("person-info")}>
-                    <div className={cl("person-name")}>{name} <StatusDot id={id} withLabel /></div>
+                    <div className={cl("person-name", "clickable")} {...personProps(user)}>{name} <StatusDot id={id} withLabel /></div>
                     {room
                         ? <div className={cl("person-where")} onClick={() => openRoomChannel(room.channel)}>
                             🔊 <b>{room.roomName}</b> · {room.place}
@@ -649,11 +724,11 @@ function MyListTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
 function AlertPerson({ id, listKey }: { id: string; listKey: ListKey; }) {
     const user = useUser(id);
     return (
-        <div className={cl("alert-person")}>
+        <div className={cl("alert-person", "clickable")} {...personProps(user)}>
             {user ? <Avatar user={user} size={28} /> : <div className={cl("avatar", "placeholder")} style={{ width: 28, height: 28 }} />}
             <span className={cl("member-name")}>{user ? displayName(user, null) : "Loading…"}</span>
             <StatusDot id={id} withLabel />
-            <span className={cl("remove")} title="Remove" onClick={() => toggleInList(listKey, id)}>✕</span>
+            <span className={cl("remove")} title="Remove" onClick={e => { e.stopPropagation(); toggleInList(listKey, id); }}>✕</span>
         </div>
     );
 }

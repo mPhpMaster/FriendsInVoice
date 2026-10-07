@@ -554,3 +554,31 @@
     font-weight: 700;
     color: #f0b232;
 }
+/* ---------- v1.3: clickable people ---------- */
+.vc-fiv-clickable {
+    cursor: pointer;
+}
+
+.vc-fiv-member.vc-fiv-clickable,
+.vc-fiv-alert-person.vc-fiv-clickable {
+    margin: 0 -4px;
+    padding-left: 4px;
+    padding-right: 4px;
+    border-radius: 6px;
+}
+
+.vc-fiv-member.vc-fiv-clickable:hover,
+.vc-fiv-alert-person.vc-fiv-clickable:hover {
+    background: var(--background-mod-normal, rgb(255 255 255 / 6%));
+}
+
+.vc-fiv-alert-person.vc-fiv-clickable {
+    margin: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.vc-fiv-chip.vc-fiv-clickable:hover,
+.vc-fiv-person-name.vc-fiv-clickable:hover {
+    text-decoration: underline;
+}

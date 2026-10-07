@@ -10,6 +10,7 @@ See at a glance **which voice rooms your friends are in, who is with them, and j
 
 - **🎧 Button in the server list** with a live badge showing how many friends are in voice right now.
 - **Full page, not a popup**: it covers Discord's main area next to the server list. Close it with ✕, `Esc`, or by clicking anything in the server list (a server or the Discord logo, which takes you back to your DMs).
+- **Click anyone to message them, right-click for Discord's menu**: on every tab, clicking a person (in a room, a "Here because of" name, a card or a list) opens your DM with them, and right-clicking opens Discord's normal user menu (Profile, Message, Call, Add Friend, … plus this plugin's options).
 
 ### 🔊 In voice (home tab)
 
