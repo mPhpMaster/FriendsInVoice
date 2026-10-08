@@ -22,7 +22,7 @@ import { Channel, User } from "@vencord/discord-types";
 import { findByPropsLazy, wreq } from "@webpack";
 import { ChannelActionCreators, ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 const REPO = "mPhpMaster/FriendsInVoice";
 
 const cl = classNameFactory("vc-fiv-");
