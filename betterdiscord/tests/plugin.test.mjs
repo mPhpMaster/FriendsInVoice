@@ -18,6 +18,7 @@ function mockApi() {
         ChannelStore: { getChannel: () => null },
         VoiceStateStore: { getVoiceStateForUser: () => null, getAllVoiceStates: () => ({}) },
         RelationshipStore: { getFriendIDs: () => [], getNickname: () => null },
+        PermissionStore: { can: () => true },
         PresenceStore: { getStatus: () => "offline" },
         SelectedChannelStore: { getChannelId: () => null },
         MessageStore: { getLastMessage: () => null }

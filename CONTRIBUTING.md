@@ -18,7 +18,7 @@ Thanks for wanting to help! FriendsInVoice is open source (GPL-3.0-or-later), an
    cd Vencord
    pnpm install --frozen-lockfile
    ```
-3. Fork this repo, clone your fork, and copy (or symlink) the `friendsInVoice` folder into `Vencord/src/userplugins/`.
+3. Fork this repo, clone your fork, and copy the `friendsInVoice` folder into `Vencord/src/userplugins/`. Copy it again after each change (for example `rsync -a --delete friendsInVoice/ ../Vencord/src/userplugins/friendsInVoice/`). A symlink doesn't work: Vencord's build resolves it outside `src/` and can't find imports such as `@api/MessageAccessories`.
 4. Build and patch Discord:
    ```bash
    pnpm build

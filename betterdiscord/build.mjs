@@ -21,7 +21,8 @@ const result = await build({
     platform: "browser",
     target: "chrome120",
     write: false,
-    minify: true,
+    // BetterDiscord plugins must not be minified: https://docs.betterdiscord.app/plugins/publishing/guidelines
+    minify: false,
     logLevel: "info"
 });
 await writeFile(output, header + result.outputFiles[0].text);

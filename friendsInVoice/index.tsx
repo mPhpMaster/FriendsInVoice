@@ -19,6 +19,7 @@ import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStor
 
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
 import { GuardNotificationHost } from "./personalGuardsNotice";
+import { isGuardMessage } from "./personalGuardsProtocol";
 import { clearGuardRuntime, handleGuardMessage } from "./personalGuardsRuntime";
 import { PersonalGuardsTab } from "./personalGuardsTab";
 import { SmartReplies } from "./smartReplies";
@@ -154,9 +155,16 @@ function getNav() {
     return document.querySelector<HTMLElement>(`.${cl("server-button")}`)?.closest("nav") ?? null;
 }
 
+// Discord's sidebar: the server list, the channel / friends list and the user panel under them
+function getSidebar() {
+    return document.querySelector<HTMLElement>('section[class^="panels_"], section[class*=" panels_"]')?.parentElement ?? null;
+}
+
+// the main area right of the sidebar, where Discord shows the chat or its own pages (Friends, Shop, …)
 function getContentRect() {
-    const r = getNav()?.getBoundingClientRect();
-    return { left: r?.right ?? 72, top: r?.top ?? 0 };
+    const sidebar = getSidebar()?.getBoundingClientRect();
+    const nav = getNav()?.getBoundingClientRect();
+    return { left: sidebar?.right ?? nav?.right ?? 72, top: sidebar?.top ?? nav?.top ?? 0 };
 }
 
 function Spotlight({ id, data }: { id: string; data: ReturnType<typeof useVoiceData>; }) {
@@ -213,6 +221,11 @@ function FriendsInVoicePage() {
             if (!(e.target as Element | null)?.closest(`.${cl("server-button")}`)) setPageOpen(false);
         };
 
+        // follow the sidebar when its divider is dragged
+        const sidebar = getSidebar();
+        const sidebarObserver = new ResizeObserver(onResize);
+        if (sidebar) sidebarObserver.observe(sidebar);
+
         window.addEventListener("keydown", onKey);
         window.addEventListener("resize", onResize);
         nav?.addEventListener("click", onNavClick, true);
@@ -220,6 +233,7 @@ function FriendsInVoicePage() {
             window.removeEventListener("keydown", onKey);
             window.removeEventListener("resize", onResize);
             nav?.removeEventListener("click", onNavClick, true);
+            sidebarObserver.disconnect();
         };
     }, []);
 
@@ -420,6 +434,10 @@ export default definePlugin({
             const { message } = props;
             if (!settings.store.smartReplies || !message?.author || message.author.bot) return null;
             if (message.author.id === UserStore.getCurrentUser()?.id) return null;
+            // only messages people wrote (DEFAULT, REPLY), not system messages such as "accepted your friend request":
+            // https://docs.discord.com/developers/resources/message#message-object-message-types
+            if (message.type !== 0 && message.type !== 19) return null;
+            if (isGuardMessage(message.content ?? "")) return null;
 
             const channel = props.channel ?? ChannelStore.getChannel(message.channel_id);
             if (!channel?.isDM()) return null;

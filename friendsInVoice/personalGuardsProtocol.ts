@@ -41,6 +41,10 @@ export function serializeWire(wire: GuardWire): string {
     return PREFIX + JSON.stringify(wire);
 }
 
+export function isGuardMessage(content: string): boolean {
+    return content.startsWith(PREFIX);
+}
+
 export function parseGuardMessage(content: string): GuardWire | null {
     if (!content.startsWith(PREFIX) || content.length > 3000) return null;
     let data: unknown;
