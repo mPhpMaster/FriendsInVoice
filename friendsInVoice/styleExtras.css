@@ -21,7 +21,7 @@
 .vc-fiv-status-label {
     font-size: 12px;
     font-weight: 500;
-    color: var(--text-muted, #949ba4);
+    color: var(--text-secondary, #b5bac1);
 }
 
 .vc-fiv-pill-offline {
@@ -83,7 +83,7 @@
 .vc-fiv-remove {
     cursor: pointer;
     padding: 0 6px;
-    color: var(--text-muted, #949ba4);
+    color: var(--text-secondary, #b5bac1);
 }
 
 .vc-fiv-remove:hover {
@@ -187,13 +187,14 @@
 
 .vc-fiv-guards-tab { max-width: 850px; line-height: 1.45; }
 .vc-fiv-guards-intro { margin-bottom: 20px; }
-.vc-fiv-guards-intro h2 { margin: 0 0 6px; }
+.vc-fiv-guards-intro h2 { margin: 0 0 6px; font-size: 20px; font-weight: 700; color: var(--header-primary, var(--text-strong, #f2f3f5)); }
+.vc-fiv-guards-tab h3 { margin: 22px 0 4px; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--text-secondary, #b5bac1); }
 .vc-fiv-guards-intro p { margin: 0 0 6px; }
 .vc-fiv-guards-intro small, .vc-fiv-guard-hint, .vc-fiv-guard-empty { color: var(--text-muted); }
 .vc-fiv-guard-controls, .vc-fiv-guard-options { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
-.vc-fiv-guard-search { display: block; width: 100%; max-width: 480px; margin: 16px 0 20px; }
-.vc-fiv-guards-tab input, .vc-fiv-guards-tab button, .vc-fiv-guard-notice select, .vc-fiv-guard-notice button { padding: 7px 10px; border-radius: 7px; }
-.vc-fiv-guards-tab button, .vc-fiv-guard-notice button { cursor: pointer; color: var(--text-default); background: var(--background-mod-strong); }
+.vc-fiv-guard-search { display: block; max-width: 480px; margin: 16px 0 6px; }
+.vc-fiv-guards-tab input, .vc-fiv-guards-tab button { padding: 7px 10px; border-radius: 7px; }
+.vc-fiv-guards-tab button { cursor: pointer; color: var(--text-default); background: var(--background-mod-strong); }
 .vc-fiv-guards-tab button:disabled { cursor: not-allowed; opacity: .5; }
 .vc-fiv-guards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 12px 0 24px; }
 .vc-fiv-guard-card { padding: 15px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--background-mod-normal); }
@@ -209,8 +210,23 @@
 .vc-fiv-guard-options label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
 .vc-fiv-guard-options input { accent-color: var(--brand-500); }
 .vc-fiv-guard-controls { margin-top: 8px; }
-.vc-fiv-guard-danger { color: var(--status-danger, #f23f43) !important; }
-.vc-fiv-guard-notices { position: fixed; right: 22px; bottom: 22px; z-index: 10000; display: flex; flex-direction: column; gap: 10px; max-width: min(500px, calc(100vw - 44px)); }
-.vc-fiv-guard-notice { padding: 14px; border: 1px solid var(--brand-500); border-radius: 12px; background: var(--background-floating, #232428); box-shadow: 0 12px 30px rgb(0 0 0 / 35%); }
-.vc-fiv-guard-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
-.vc-fiv-guard-notice-actions label { display: inline-flex; align-items: center; gap: 5px; }
+.vc-fiv-guard-danger { color: #fff !important; background: var(--button-danger-background, #da373c) !important; }
+
+/* native controls (selects, checkboxes, scrollbars, search clear button) follow Discord's theme */
+.theme-dark .vc-fiv-page, .theme-dark .vc-fiv-guard-notices, .theme-dark .vc-fiv-guard-modal { color-scheme: dark; }
+.theme-light .vc-fiv-page, .theme-light .vc-fiv-guard-notices, .theme-light .vc-fiv-guard-modal { color-scheme: light; }
+
+/* the guard notice matches Vencord's notification cards; it lives in document.body, so it sets its own colours */
+.vc-fiv-guard-notices { position: fixed; right: 16px; bottom: 16px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; width: min(400px, calc(100vw - 32px)); }
+.vc-fiv-guard-notice { display: flex; gap: 14px; padding: 16px; border-radius: 8px; color: var(--text-default, #dbdee1); background: var(--background-base-low, #2b2d31); border: 1px solid var(--border-subtle, rgb(255 255 255 / 8%)); box-shadow: var(--shadow-high, 0 8px 24px rgb(0 0 0 / 40%)); font-size: 14px; }
+.vc-fiv-guard-notice-avatar { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; }
+.vc-fiv-guard-notice-content { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
+.vc-fiv-guard-notice-header { display: flex; align-items: center; justify-content: space-between; }
+.vc-fiv-guard-notice-title { color: var(--text-strong, #f2f3f5); font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.vc-fiv-guard-notice-close { all: unset; cursor: pointer; padding: 0 4px; color: var(--interactive-icon-default, #b5bac1); opacity: .6; }
+.vc-fiv-guard-notice-close:hover { opacity: 1; }
+.vc-fiv-guard-notice-text { margin: 0; line-height: 1.4; }
+.vc-fiv-guard-notice-text strong { color: var(--text-strong, #f2f3f5); }
+.vc-fiv-guard-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.vc-fiv-guard-notice select { height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border-subtle, rgb(255 255 255 / 10%)); color: var(--text-default, #dbdee1); background: var(--background-mod-normal, rgb(255 255 255 / 6%)); font-size: 14px; }
+.vc-fiv-guard-notice option { color: var(--text-default, #dbdee1); background: var(--background-floating, #232428); }

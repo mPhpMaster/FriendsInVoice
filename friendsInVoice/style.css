@@ -1,42 +1,60 @@
 /* ---------- server list button ---------- */
+/* same size and spacing as Discord's 40px server icons */
 .vc-fiv-server-button {
     position: relative;
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     flex-shrink: 0;
-    margin: 4px auto 8px;
-    border-radius: 50%;
+    margin: 0 auto 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     color: var(--interactive-icon-default, #b5bac1);
+    transition: color 0.15s;
+}
+
+/* Discord's server icon shape (the path its own icons are masked with) */
+.vc-fiv-server-button::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    clip-path: path("M0 17.4545C0 11.3449 0 8.29005 1.18902 5.95647C2.23491 3.90379 3.90379 2.23491 5.95647 1.18902C8.29005 0 11.3449 0 17.4545 0H22.5455C28.6551 0 31.71 0 34.0435 1.18902C36.0962 2.23491 37.7651 3.90379 38.811 5.95647C40 8.29005 40 11.3449 40 17.4545V22.5455C40 28.6551 40 31.71 38.811 34.0435C37.7651 36.0962 36.0962 37.7651 34.0435 38.811C31.71 40 28.6551 40 22.5455 40H17.4545C11.3449 40 8.29005 40 5.95647 38.811C3.90379 37.7651 2.23491 36.0962 1.18902 34.0435C0 31.71 0 28.6551 0 22.5455V17.4545Z");
     background: var(--background-mod-normal, rgb(255 255 255 / 6%));
-    transition: border-radius 0.15s, background 0.15s, color 0.15s;
+    transition: background 0.15s;
+}
+
+.vc-fiv-server-button svg {
+    position: relative;
 }
 
 .vc-fiv-server-button:hover,
 .vc-fiv-server-button-open {
-    border-radius: 16px;
     color: #fff;
+}
+
+.vc-fiv-server-button:hover::before,
+.vc-fiv-server-button-open::before {
     background: var(--brand-500, #5865f2);
 }
 
+/* matches Discord's server badges: 16px pill, 12px semibold, ring in the server list colour */
 .vc-fiv-badge {
     position: absolute;
-    right: -2px;
-    bottom: -2px;
+    right: 0;
+    bottom: 0;
     min-width: 16px;
     height: 16px;
     padding: 0 4px;
     box-sizing: border-box;
     border-radius: 8px;
-    border: 3px solid var(--background-base-lowest, #1e1f22);
-    background: #23a55a;
+    box-shadow: 0 0 0 2px var(--background-base-lowest, #121214);
+    background: #248046;
     color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -48,6 +66,7 @@
 }
 
 /* ---------- page ---------- */
+
 .vc-fiv-page {
     position: fixed;
     right: 0;
@@ -68,7 +87,10 @@
     padding: 0 16px;
     min-height: 48px;
     border-bottom: 1px solid var(--border-subtle, rgb(255 255 255 / 6%));
-    flex-wrap: wrap;
+}
+
+.vc-fiv-page-header > * {
+    flex-shrink: 0;
 }
 
 .vc-fiv-page-title {
@@ -77,13 +99,20 @@
     color: var(--text-strong, #f2f3f5);
 }
 
-.vc-fiv-tabs {
+/* one header row at any width: the tabs scroll sideways instead of wrapping */
+.vc-fiv-page-header > .vc-fiv-tabs {
     display: flex;
+    flex-shrink: 1;
+    min-width: 0;
     gap: 6px;
     margin-left: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
 }
 
 .vc-fiv-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
     padding: 4px 10px;
     border-radius: 6px;
     cursor: pointer;
@@ -112,6 +141,7 @@
 
 .vc-fiv-page-sub {
     margin-left: auto;
+    white-space: nowrap;
     font-size: 13px;
     color: var(--text-muted, #949ba4);
 }
@@ -388,8 +418,8 @@
 }
 
 .vc-fiv-pill-watch {
-    background: rgb(240 178 50 / 25%);
-    color: #f0b232;
+    background: rgb(240 178 50 / 18%);
+    color: #f5c04f;
 }
 
 .vc-fiv-pill-live {

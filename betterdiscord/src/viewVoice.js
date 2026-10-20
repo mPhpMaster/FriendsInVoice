@@ -22,10 +22,13 @@ export function renderVoiceTab(parent, view) {
                     button(member.watched ? "★" : "☆", () => { view.data.toggleList("watchlist", member.id); update(); }));
                 card.append(row);
             }
-            if (view.bridge.voiceChannel(view.bridge.currentId()) !== room.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel)
-                card.append(button("Join voice", () => {
+            if (view.bridge.voiceChannel(view.bridge.currentId()) !== room.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
+                const join = button(room.blocker ?? "Join voice", () => {
                     try { view.bridge.voiceChannelActions.selectVoiceChannel(room.channelId); } catch (error) { view.error(error); }
-                }));
+                });
+                join.disabled = !!room.blocker;
+                card.append(join);
+            }
             results.append(card);
         }
     }

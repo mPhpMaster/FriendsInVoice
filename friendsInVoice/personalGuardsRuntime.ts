@@ -39,7 +39,7 @@ export function clearGuardRuntime() {
 }
 
 export function guardDisplayName(userId: string): string {
-    const ownChannel = UserStore.getCurrentUser()?.id && VoiceStateStore.getVoiceStateForUser(UserStore.getCurrentUser()!.id)?.channelId;
+    const ownChannel = myVoiceChannel();
     const voiceGuild = ownChannel && ChannelStore.getChannel(ownChannel)?.guild_id;
     const guildId = voiceGuild ?? SelectedGuildStore.getGuildId();
     const user = UserStore.getUser(userId);
@@ -166,24 +166,24 @@ export async function sendGuardCommand(store: GuardsStore, ownerId: string, acti
     } catch { sendError("Could not prepare the encrypted command. Nothing was sent."); }
 }
 
-function getVoiceChannel(userId: string): string | null {
-    return VoiceStateStore.getVoiceStateForUser(userId)?.channelId ?? null;
+// The voice channel this Discord client is connected to. getVoiceStateForUser can return a voice session
+// from another device, and a user can have several sessions at once.
+function myVoiceChannel(): string | null {
+    return SelectedChannelStore.getVoiceChannelId() ?? null;
 }
 
 export function sharesVoice(userId: string): boolean {
-    const myId = UserStore.getCurrentUser()?.id;
-    const channel = myId && getVoiceChannel(myId);
-    return !!channel && getVoiceChannel(userId) === channel;
+    const channel = myVoiceChannel();
+    return !!channel && !!VoiceStateStore.getVoiceStatesForChannel(channel)?.[userId];
 }
 
 async function applyAction(action: GuardAction): Promise<(() => void) | null> {
     if (action === "disconnect") {
-        const ownId = UserStore.getCurrentUser()?.id;
-        const oldChannel = ownId && getVoiceChannel(ownId);
+        const oldChannel = myVoiceChannel();
         if (!oldChannel) return null;
         voiceChannelActions.selectVoiceChannel(null);
         await new Promise(resolve => setTimeout(resolve, 250));
-        if (getVoiceChannel(ownId!) === oldChannel) return null;
+        if (myVoiceChannel() === oldChannel) return null;
         return () => voiceChannelActions.selectVoiceChannel(oldChannel);
     }
     if (action === "mute") {

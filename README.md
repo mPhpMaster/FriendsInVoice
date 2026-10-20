@@ -22,7 +22,7 @@ Every voice room that has at least one of your **friends** in it, laid out side 
 - **"Here because of:"**: the friends that put this room on the list, so you instantly know why it's there,
 - everyone in the room, with `FRIEND` / `MY LIST` / `LIVE` tags and muted/deafened icons,
 - a `SHOWS OFFLINE` tag on friends who are in the room even though their status says offline,
-- a **Join** button (shows `Joined` if you're already there, `Locked` if you lack permission),
+- a **Join** button (shows `Joined` if you're already there, `Locked` if you lack permission, `Full` if the room is at its user limit; rooms in channels you can't open show as *Private channel*),
 - search across people, servers and rooms.
 
 ### ⭐ My list

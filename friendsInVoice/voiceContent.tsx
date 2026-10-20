@@ -23,7 +23,6 @@ export interface Member {
     isFriend: boolean;
     isWatched: boolean;
     isMe: boolean;
-    showsOffline: boolean;
     muted: boolean;
     deafened: boolean;
     streaming: boolean;
@@ -46,12 +45,19 @@ export function displayName(user: User, guildId: string | null) {
         ?? user.username;
 }
 
+// Discord sends channels you can't view with the name "___hidden___" and the CHANNEL_OBFUSCATED flag:
+// https://docs.discord.com/developers/change-log (August 12, 2026)
+const CHANNEL_OBFUSCATED = 1 << 17;
+function isObfuscated(channel: Channel) {
+    return channel.name === "___hidden___" || ((channel as any).flags & CHANNEL_OBFUSCATED) !== 0;
+}
+
 export function describeChannel(channel: Channel) {
     const guild = channel.guild_id ? GuildStore.getGuild(channel.guild_id) : null;
     if (guild) {
         return {
             place: guild.name,
-            roomName: channel.name,
+            roomName: isObfuscated(channel) ? "Private channel" : channel.name,
             icon: guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64` : null
         };
     }
@@ -77,8 +83,6 @@ function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watc
             isFriend: friendIds.has(user.id),
             isWatched: watched.has(user.id),
             isMe,
-            // Discord only reliably sends presence for friends, so only flag those
-            showsOffline: !isMe && friendIds.has(user.id) && !isOnline(PresenceStore.getStatus(user.id)),
             muted: !!(s.mute || s.selfMute),
             deafened: !!(s.deaf || s.selfDeaf),
             streaming: !!s.selfStream
@@ -150,9 +154,21 @@ function canJoin(channel: Channel) {
     return PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel) && PermissionStore.can(PermissionsBits.CONNECT, channel);
 }
 
+// a room at its user limit can only be joined with Move Members:
+// https://docs.discord.com/developers/topics/voice-connections
+function isFull(channel: Channel) {
+    const limit = channel.userLimit ?? 0;
+    if (!limit || PermissionStore.can(PermissionsBits.MOVE_MEMBERS, channel)) return false;
+    return Object.keys(VoiceStateStore.getVoiceStatesForChannel(channel.id) ?? {}).length >= limit;
+}
+
 function joinRoom(channel: Channel) {
     if (!canJoin(channel)) {
         showToast({ text: "You don't have permission to join this room", variant: "critical" });
+        return;
+    }
+    if (isFull(channel)) {
+        showToast({ text: "This room is full", variant: "critical" });
         return;
     }
     selectVoiceChannel(channel.id);
@@ -273,6 +289,10 @@ export function StarButton({ userId }: { userId: string; }) {
 }
 
 export function MemberRow({ member }: { member: Member; }) {
+    // read here, not in collect(), so the tag follows status changes while the page is open
+    const status = useStateFromStores([PresenceStore], () => PresenceStore.getStatus(member.user.id));
+    // Discord only reliably sends presence for friends, so only flag those
+    const showsOffline = !member.isMe && member.isFriend && !isOnline(status);
     return (
         <div
             className={cl("member", (member.isFriend || member.isWatched) && "friend", !member.isMe && "clickable")}
@@ -284,7 +304,7 @@ export function MemberRow({ member }: { member: Member; }) {
             </span>
             {member.isWatched && <span className={cl("pill", "pill-watch")}>MY LIST</span>}
             {member.isFriend && <span className={cl("pill", "pill-friend")}>FRIEND</span>}
-            {member.showsOffline && <span className={cl("pill", "pill-offline")} title="Their status shows offline, but they're in this room">SHOWS OFFLINE</span>}
+            {showsOffline && <span className={cl("pill", "pill-offline")} title="Their status shows offline, but they're in this room">SHOWS OFFLINE</span>}
             {member.streaming && <span className={cl("pill", "pill-live")}>LIVE</span>}
             {member.deafened ? <span className={cl("tag")} title="Deafened">🔇</span>
                 : member.muted && <span className={cl("tag")} title="Muted">🎙️✕</span>}
@@ -295,14 +315,15 @@ export function MemberRow({ member }: { member: Member; }) {
 
 export function JoinButton({ channel, inThisRoom }: { channel: Channel; inThisRoom: boolean; }) {
     const joinable = canJoin(channel);
+    const full = joinable && isFull(channel);
     return (
         <Button
             size="small"
             variant={inThisRoom ? "secondary" : "primary"}
-            disabled={inThisRoom || !joinable}
+            disabled={inThisRoom || !joinable || full}
             onClick={() => joinRoom(channel)}
         >
-            {inThisRoom ? "Joined" : joinable ? "Join" : "Locked"}
+            {inThisRoom ? "Joined" : !joinable ? "Locked" : full ? "Full" : "Join"}
         </Button>
     );
 }

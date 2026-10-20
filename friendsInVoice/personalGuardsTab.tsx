@@ -100,7 +100,7 @@ export function PersonalGuardsTab({ store, refresh }: { store: GuardsStore; refr
             <p>Choose who can mute, deafen, or disconnect your own account while you share voice.</p>
             <small>Right-click a person → Personal Guards → Add as Guardian. Choose their actions, invite them, and press Send in the DM. They accept here without sending a reply. Commands stay encrypted and your private key stays on this device.</small>
         </div>
-        <input className={cl("guard-search")} type="search" value={search} onChange={event => setSearch(event.currentTarget.value)}
+        <input className={cl("search", "guard-search")} type="search" value={search} onChange={event => setSearch(event.currentTarget.value)}
             placeholder="Search guardians and access" aria-label="Search guardians and access" />
         <h3>People who guard me</h3>
         <div className={cl("guards-grid")}>
