@@ -44,9 +44,15 @@ Right-click a user → **Add to Run away** (or **Remove from Run away**). Every 
 
 ### 🛡️ Personal Guards
 
-Right-click someone and choose **Personal Guards → Add as Guardian**. The Personal Guards page opens with no permissions selected; choose any combination of **Mute microphone**, **Deafen**, and **Disconnect from voice**. You can edit or revoke each permission later. The page has search, but people are added through Discord's user menu.
+Let a friend you trust mute, deafen, or disconnect **your** account while you're both in the same voice channel. No moderator permission is needed, and nothing is sent without you pressing Enter.
 
-Select the allowed actions, click **Invite guardian**, and press Discord's **Send** button on the prepared DM. The guardian opens **Personal Guards** and clicks **Accept invitation**; they do not need to send a setup message. The invitation contains the allowed action names and your public key, so its permissions are visible to the DM recipient. Your private key stays in local non-extractable browser storage. Each later command is encrypted with ECDH and AES-GCM. The guardian sees only accepted **Guard Actions** while you share a voice channel. Your client checks the Discord sender, current grant, invitation identity, freshness, replay, and shared voice channel before acting. No moderator permission is needed. A received-command notification offers **Undo** and a temporary block. If a command is rejected, your client now shows the reason. **Revoke and remove** immediately removes local access; the guardian's menu may keep stale actions until they receive a new invitation, but those commands are rejected.
+1. **You:** right-click them → **Make Personal Guard…**, tick what they may do (**Mute microphone**, **Deafen**, **Disconnect from voice**) and click **Prepare invite**. Your DM with them opens with the invite ready; press **Enter**.
+2. **They:** the invite shows an **Accept** / **Decline** card in your DM, so it works even if they were offline when you sent it.
+3. **Using it:** while you share a voice channel, they right-click you → **🛡️ Mute <you>** (or Deafen / Disconnect) and press **Enter** on the prepared message. It's sent with `@silent`, so you don't get a ping. You get a notice with **Undo** and a temporary **Block**; if a command is refused, you see why.
+
+Change or remove access any time from the same menu (**Personal Guard settings…**). An updated invite replaces the old one, and their client takes it over automatically. Removing someone takes effect on your side immediately.
+
+In the chat, each Personal Guards message is a single short line (a link whose hidden part carries the data; clicking it opens this project's page). The invite shows the allowed actions and your public key. Commands are encrypted with ECDH and AES-GCM, and your private key stays in local, non-extractable browser storage. Before acting, your client checks the Discord sender, the current invite, freshness, replays and that you share a voice channel. Keys are per Discord installation, so after moving to a new device send a new invite.
 
 Under **Access others gave you**, click **Remove access** to remove an accepted owner from your local list and its Guard Actions menu. This does not change the owner's own guardian list.
 

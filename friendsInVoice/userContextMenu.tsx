@@ -8,9 +8,10 @@ import type { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import type { User } from "@vencord/discord-types";
 import { Menu, UserStore } from "@webpack/common";
 
-import { inList, openGuardsPage, selfMenuItems, settings, toggleInList } from ".";
-import { GUARD_ACTIONS, GUARD_LABELS } from "./personalGuardsProtocol";
-import { hasGuardKey, sendGuardCommand, setGrant, sharesVoice } from "./personalGuardsRuntime";
+import { inList, selfMenuItems, settings, toggleInList } from ".";
+import { openGuardModal } from "./personalGuardsModal";
+import { GUARD_ACTIONS, GUARD_VERBS } from "./personalGuardsProtocol";
+import { guardDisplayName, hasGuardKey, sendGuardCommand, sharesVoice } from "./personalGuardsRuntime";
 
 export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }: { user?: User; }) => {
     if (!user) return;
@@ -27,7 +28,12 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
     const actions = known && hasGuardKey(settings.store, user.id) && sharesVoice(user.id)
         ? GUARD_ACTIONS.filter(action => known.actions.includes(action)) : [];
 
+    const isGuardian = settings.store.personalGuards.some(grant => grant.userId === user.id);
+    const name = actions.length ? guardDisplayName(user.id) : "";
+
     children.push(<Menu.MenuGroup>
+        {actions.map(action => <Menu.MenuItem key={action} id={`vc-fiv-guard-${action}`} label={`🛡️ ${GUARD_VERBS[action]} ${name}`}
+            action={() => void sendGuardCommand(settings.store, user.id, action)} />)}
         <Menu.MenuItem id="vc-fiv-watch" label={watched ? "Remove from My list" : "Add to My list"}
             action={() => toggleInList("watchlist", user.id)} />
         <Menu.MenuItem id="vc-fiv-notify-voice" label={notifyVoice ? "Stop notifying me when in voice" : "Notify me when in voice"}
@@ -36,16 +42,7 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
             action={() => toggleInList("notifyOnline", user.id)} />
         <Menu.MenuItem id="vc-fiv-blacklist" label={blocked ? "Remove from Run away" : "Add to Run away"}
             color={blocked ? undefined : "danger"} action={() => toggleInList("blacklist", user.id)} />
-        <Menu.MenuItem id="vc-fiv-personal-guards" label="Personal Guards">
-            <Menu.MenuItem id="vc-fiv-add-guard" label={settings.store.personalGuards.some(grant => grant.userId === user.id) ? "Manage guardian" : "Add as Guardian"}
-                action={() => {
-                    if (!settings.store.personalGuards.some(grant => grant.userId === user.id)) setGrant(settings.store, user.id, []);
-                    openGuardsPage();
-                }} />
-            {actions.length > 0 && <Menu.MenuItem id="vc-fiv-guard-actions" label="Guard Actions">
-                {actions.map(action => <Menu.MenuItem key={action} id={`vc-fiv-guard-${action}`} label={`Send ${GUARD_LABELS[action]}`}
-                    action={() => void sendGuardCommand(settings.store, user.id, action)} />)}
-            </Menu.MenuItem>}
-        </Menu.MenuItem>
+        <Menu.MenuItem id="vc-fiv-personal-guards" label={isGuardian ? "Personal Guard settings…" : "Make Personal Guard…"}
+            action={() => openGuardModal(user.id)} />
     </Menu.MenuGroup>);
 };

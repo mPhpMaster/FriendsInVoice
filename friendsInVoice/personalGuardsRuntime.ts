@@ -7,14 +7,14 @@
 import { showNotification } from "@api/Notifications";
 import { insertTextIntoChatInputBox } from "@utils/discord";
 import { findByPropsLazy } from "@webpack";
-import { ChannelActionCreators, ChannelStore, DraftStore, DraftType, GuildMemberStore, GuildStore, MediaEngineStore, SelectedChannelStore, SelectedGuildStore, UserStore, VoiceStateStore } from "@webpack/common";
+import { ChannelActionCreators, ChannelStore, DraftStore, DraftType, GuildMemberStore, GuildStore, MediaEngineStore, SelectedChannelStore, SelectedGuildStore, showToast, UserStore, VoiceStateStore } from "@webpack/common";
 
-import { openGuardsPage, setPageOpen } from ".";
+import { openGuardsPage, openPrivateChannel, setPageOpen } from ".";
 import { getGuardKeys, openGuardPayload, publicKeyString, sealGuardPayload, validatePublicKey } from "./personalGuardsCrypto";
 import { createGuardDraftPreparer } from "./personalGuardsDraft";
-import { GUARD_ACTIONS, GUARD_LABELS, makeCommand, makeGrantNotice, newGuardNonce, parseGuardMessage, serializeWire } from "./personalGuardsProtocol";
+import { GUARD_ACTIONS, GUARD_LABELS, GUARD_VERBS, inviteSummary, isGuardMessage, makeCommand, makeGrantNotice, newGuardNonce, parseGuardMessage, serializeWire } from "./personalGuardsProtocol";
 import { saveGuardInvitation, writeGuardSetting } from "./personalGuardsSettings";
-import type { GuardAction, GuardEvent, GuardsStore, IncomingMessage } from "./personalGuardsTypes";
+import type { GuardAction, GuardEvent, GuardInvite, GuardsStore, IncomingMessage } from "./personalGuardsTypes";
 
 export type { GuardEvent, GuardsStore } from "./personalGuardsTypes";
 
@@ -78,25 +78,39 @@ export async function sendGuardInvite(store: GuardsStore, guardianId: string) {
         stage = "loading your secure key";
         const publicKey = await publicKeyString(await getGuardKeys());
         stage = "opening the guardian's DM";
-        const text = serializeWire({ type: "invite", version: 3, publicKey, actions, nonce });
+        const text = serializeWire({ type: "invite", version: 3, publicKey, actions, nonce }, inviteSummary(actions));
         if (!await openDraft(guardianId, text)) return;
         stage = "saving the invitation";
         saveGuardInvitation(store, guardianId, nonce);
-        showNotification({ title: "Personal Guards", body: "Invitation ready. Press Discord's Send button. The guardian can then accept it without sending a reply." });
+        showToast({ text: "Invite ready: press Enter to send it. They accept it from that message.", variant: "success" });
     } catch (error) {
         const detail = error instanceof Error ? error.message.slice(0, 120) : "Unexpected error";
         sendError(`Invitation failed while ${stage}: ${detail}`);
     }
 }
 
-export function acceptGuardInvite(store: GuardsStore, ownerId: string) {
-    const invite = store.pendingGuardInvites.find(item => item.userId === ownerId);
-    if (!invite) return;
+/** Accept an invite, either a pending one or one read from the invite message itself (so it works after being offline) */
+export async function acceptGuardInvite(store: GuardsStore, ownerId: string, invite = store.pendingGuardInvites.find(item => item.userId === ownerId), announce = true) {
+    if (!invite || invite.userId !== ownerId || !await validatePublicKey(invite.publicKey)) {
+        sendError("This invite can't be used. Ask them to prepare a new one.");
+        return;
+    }
     writeGuardSetting(store, "guardPeerKeys", [...store.guardPeerKeys.filter(item => item.userId !== ownerId), { userId: ownerId, publicKey: invite.publicKey }]);
     writeGuardSetting(store, "knownGuardGrants", [...store.knownGuardGrants.filter(item => item.userId !== ownerId),
         { userId: ownerId, actions: [...invite.actions], inviteNonce: invite.nonce }]);
     writeGuardSetting(store, "pendingGuardInvites", store.pendingGuardInvites.filter(item => item.userId !== ownerId));
-    showNotification({ title: "Personal Guards", body: "Invitation accepted. Join the owner's voice channel to use your allowed actions." });
+    writeGuardSetting(store, "declinedGuardInvites", store.declinedGuardInvites.filter(nonce => nonce !== invite.nonce));
+    if (announce) showToast({ text: `You're ${guardDisplayName(ownerId)}'s Personal Guard. In the same voice channel, right-click them to use it.`, variant: "success" });
+}
+
+export function declineGuardInvite(store: GuardsStore, ownerId: string, nonce: string) {
+    writeGuardSetting(store, "pendingGuardInvites", store.pendingGuardInvites.filter(item => item.userId !== ownerId || item.nonce !== nonce));
+    writeGuardSetting(store, "declinedGuardInvites", [...store.declinedGuardInvites.filter(item => item !== nonce), nonce].slice(-50));
+}
+
+export function inviteFromMessage(message: IncomingMessage): GuardInvite | null {
+    const wire = parseGuardMessage(message.content ?? "");
+    return wire?.type === "invite" ? { userId: message.author.id, actions: [...wire.actions], publicKey: wire.publicKey, nonce: wire.nonce } : null;
 }
 
 function peerKey(store: GuardsStore, userId: string): string | undefined {
@@ -162,7 +176,9 @@ export async function sendGuardCommand(store: GuardsStore, ownerId: string, acti
     if (!guardianId || !key) { sendError("No public key for this owner. Ask them to send an updated grant."); return; }
     try {
         const wire = await sealGuardPayload(makeCommand(ownerId, action, grant.inviteNonce), await getGuardKeys(), key, guardianId, ownerId);
-        await openDraft(ownerId, serializeWire(wire));
+        // @silent: Discord sends it without a notification sound or push
+        if (await openDraft(ownerId, `@silent ${serializeWire(wire, "Personal Guard action")}`))
+            showToast({ text: `Press Enter to ${GUARD_VERBS[action].toLowerCase()} ${guardDisplayName(ownerId)}.`, variant: "success" });
     } catch { sendError("Could not prepare the encrypted command. Nothing was sent."); }
 }
 
@@ -207,7 +223,7 @@ export async function handleGuardMessage(store: GuardsStore, message: IncomingMe
     const wire = parseGuardMessage(message.content);
     if (!ChannelStore.getChannel(message.channel_id)?.isDM()) return;
     if (!wire) {
-        if (message.author.id !== UserStore.getCurrentUser()?.id && message.content.startsWith("[FriendsInVoice Guard v2]"))
+        if (message.author.id !== UserStore.getCurrentUser()?.id && isGuardMessage(message.content))
             sendError("Invalid guard message. Send one fresh invitation or command by itself, without other text or a previous draft.");
         return;
     }
@@ -218,9 +234,21 @@ export async function handleGuardMessage(store: GuardsStore, message: IncomingMe
     if (!me || !senderId || senderId === me) return;
     if (wire.type === "invite") {
         if (!await validatePublicKey(wire.publicKey)) return;
+        const current = store.knownGuardGrants.find(grant => grant.userId === senderId);
+        if (current?.inviteNonce === wire.nonce) return;
+        // already their guard: a new invite from them only changes what they allow, so take it over directly
+        if (current) {
+            await acceptGuardInvite(store, senderId, { userId: senderId, publicKey: wire.publicKey, actions: [...wire.actions], nonce: wire.nonce }, false);
+            showNotification({ title: "Personal Guards", body: `${guardDisplayName(senderId)} changed what you can do: ${wire.actions.map(action => GUARD_LABELS[action].toLowerCase()).join(", ")}.` });
+            return;
+        }
         writeGuardSetting(store, "pendingGuardInvites", [...store.pendingGuardInvites.filter(item => item.userId !== senderId),
             { userId: senderId, publicKey: wire.publicKey, actions: [...wire.actions], nonce: wire.nonce }]);
-        showNotification({ title: "Personal Guards", body: `${guardDisplayName(senderId)} invited you to be their guardian. Click to accept or decline.`, onClick: openGuardsPage });
+        showNotification({
+            title: "Personal Guards",
+            body: `${guardDisplayName(senderId)} invited you to be their Personal Guard. Click to accept or decline it in your DM.`,
+            onClick: () => { setPageOpen(false); openPrivateChannel(senderId); }
+        });
         return;
     }
     if (wire.type === "key") {
