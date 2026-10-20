@@ -366,6 +366,8 @@ var GUARD_LABELS = {
   disconnect: "Disconnect from voice"
 };
 var PREFIX = "[FriendsInVoice Guard v2] ";
+var LINK = "https://github.com/mPhpMaster/FriendsInVoice#fiv-guard=";
+var LINKED = /#fiv-guard=([A-Za-z0-9_\-\s]+)>?\)/;
 var SNOWFLAKE = /^\d{17,20}$/;
 var BASE64_URL = /^[A-Za-z0-9_-]+$/;
 function isUserId(value) {
@@ -384,14 +386,36 @@ function makeCommand(ownerId, action, inviteNonce) {
 function makeGrantNotice(ownerId, actions) {
   return { kind: "grant", ownerId, actions: GUARD_ACTIONS.filter((action) => actions.includes(action)), createdAt: Date.now() };
 }
-function serializeWire(wire) {
-  return PREFIX + JSON.stringify(wire);
+function toBase64Url(text) {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function fromBase64Url(value) {
+  try {
+    const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+function serializeWire(wire, summary = "Personal Guards message") {
+  return `\u{1F6E1}\uFE0F [${summary}](<${LINK}${toBase64Url(JSON.stringify(wire))}>)`;
+}
+function guardJson(content) {
+  if (content.length > 3e3) return null;
+  const envelopes = content.split(PREFIX).length - 1 + content.split("#fiv-guard=").length - 1;
+  if (envelopes !== 1) return null;
+  if (content.startsWith(PREFIX)) return content.slice(PREFIX.length);
+  const data = LINKED.exec(content)?.[1]?.replace(/\s/g, "");
+  return data ? fromBase64Url(data) : null;
 }
 function parseGuardMessage(content) {
-  if (!content.startsWith(PREFIX) || content.length > 3e3) return null;
+  const json = guardJson(content);
+  if (!json) return null;
   let data;
   try {
-    data = JSON.parse(content.slice(PREFIX.length));
+    data = JSON.parse(json);
   } catch {
     return null;
   }
@@ -423,12 +447,12 @@ var encoder = new TextEncoder();
 var decoder = new TextDecoder();
 var DB_NAME = "FriendsInVoiceGuardKeys";
 var keyPromise;
-function toBase64Url(bytes) {
+function toBase64Url2(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function fromBase64Url(value) {
+function fromBase64Url2(value) {
   const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
@@ -473,11 +497,11 @@ function getGuardKeys() {
   });
 }
 async function publicKeyString(pair) {
-  return toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
+  return toBase64Url2(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
 }
 async function validatePublicKey(value) {
   try {
-    const bytes = fromBase64Url(value);
+    const bytes = fromBase64Url2(value);
     if (bytes.length !== 65 || bytes[0] !== 4) return false;
     await crypto.subtle.importKey("raw", buffer(bytes), { name: "ECDH", namedCurve: "P-256" }, false, []);
     return true;
@@ -486,7 +510,7 @@ async function validatePublicKey(value) {
   }
 }
 async function sharedKey(pair, peerPublic, firstId, secondId) {
-  const peer = await crypto.subtle.importKey("raw", buffer(fromBase64Url(peerPublic)), { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const peer = await crypto.subtle.importKey("raw", buffer(fromBase64Url2(peerPublic)), { name: "ECDH", namedCurve: "P-256" }, false, []);
   const secret = await crypto.subtle.deriveBits({ name: "ECDH", public: peer }, pair.privateKey, 256);
   const hkdf = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]);
   const info = encoder.encode([firstId, secondId].sort().join("|"));
@@ -510,16 +534,16 @@ async function sealGuardPayload(payload, pair, peerPublic, senderId, recipientId
     key,
     buffer(encoder.encode(JSON.stringify(payload)))
   );
-  return { type: "sealed", version: 2, to: recipientId, fromKey, iv: toBase64Url(iv), ciphertext: toBase64Url(new Uint8Array(ciphertext)) };
+  return { type: "sealed", version: 2, to: recipientId, fromKey, iv: toBase64Url2(iv), ciphertext: toBase64Url2(new Uint8Array(ciphertext)) };
 }
 async function openGuardPayload(wire, pair, senderId, recipientId) {
   if (wire.to !== recipientId) return null;
   try {
     const key = await sharedKey(pair, wire.fromKey, senderId, recipientId);
     const plaintext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: buffer(fromBase64Url(wire.iv)), additionalData: buffer(additionalData(senderId, recipientId, wire.fromKey)) },
+      { name: "AES-GCM", iv: buffer(fromBase64Url2(wire.iv)), additionalData: buffer(additionalData(senderId, recipientId, wire.fromKey)) },
       key,
-      buffer(fromBase64Url(wire.ciphertext))
+      buffer(fromBase64Url2(wire.ciphertext))
     );
     return parseGuardPayload(JSON.parse(decoder.decode(plaintext)));
   } catch {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { openGuardPayload, publicKeyString, sealGuardPayload, validatePublicKey } from "../friendsInVoice/personalGuardsCrypto";
-import { makeCommand, makeGrantNotice, newGuardNonce, parseGuardMessage, serializeWire } from "../friendsInVoice/personalGuardsProtocol";
+import { inviteSummary, isGuardMessage, makeCommand, makeGrantNotice, newGuardNonce, parseGuardMessage, serializeWire } from "../friendsInVoice/personalGuardsProtocol";
 
 const ownerId = "123456789012345678";
 const guardianId = "234567890123456789";
@@ -56,7 +56,7 @@ test("owner invitation carries the allowed actions and binds later encrypted com
     const wire = await sealGuardPayload(command, guardian, await publicKeyString(owner), guardianId, ownerId);
     const decoded = await openGuardPayload(wire, owner, guardianId, ownerId);
     assert.equal(decoded?.kind === "command" ? decoded.inviteNonce : null, nonce);
-    assert.equal(parseGuardMessage(invite.replace('"mute"', '"unknown"')), null);
+    assert.equal(parseGuardMessage(serializeWire({ type: "invite", version: 3, publicKey: await publicKeyString(owner), actions: ["unknown" as any], nonce })), null);
 });
 
 test("transport whitespace in encoded fields preserves invitation and authenticated command", async () => {
@@ -83,4 +83,39 @@ test("normalization does not accept arbitrary punctuation or joined guard envelo
     const message = serializeWire(wire);
     assert.equal(parseGuardMessage(serializeWire({ ...wire, publicKey: "A".repeat(86) + "." })), null);
     assert.equal(parseGuardMessage(message + message), null);
+});
+
+test("messages are one short masked link with the data in its fragment", async () => {
+    const owner = await pair();
+    const guardian = await pair();
+    const nonce = newGuardNonce();
+    const wire = { type: "invite" as const, version: 3 as const, publicKey: await publicKeyString(owner), actions: ["mute" as const, "deafen" as const], nonce };
+    const text = serializeWire(wire, inviteSummary(["deafen", "mute"]));
+    assert.match(text, /^🛡️ \[Personal Guard invite: mute microphone, deafen\]\(<https:\/\/github\.com\/mPhpMaster\/FriendsInVoice#fiv-guard=[A-Za-z0-9_-]+>\)$/);
+    assert.ok(text.length < 400);
+    assert.deepEqual(parseGuardMessage(text), wire);
+    assert.equal(isGuardMessage(text), true);
+
+    // a command's visible text must not reveal the action
+    const sealed = await sealGuardPayload(makeCommand(ownerId, "disconnect", nonce), guardian, await publicKeyString(owner), guardianId, ownerId);
+    const command = serializeWire(sealed, "Personal Guard action");
+    assert.ok(!/disconnect|mute|deafen/i.test(command));
+    assert.ok(command.length < 1000);
+    assert.equal(parseGuardMessage(command)?.type, "sealed");
+    // spacing inserted into the long encoded word is ignored
+    assert.equal(parseGuardMessage(command.replace(/(fiv-guard=.{40})/, "$1 \n"))?.type, "sealed");
+});
+
+test("messages from before the link format still parse", async () => {
+    const owner = await pair();
+    const legacy = "[FriendsInVoice Guard v2] " + JSON.stringify({ type: "invite", version: 3, publicKey: await publicKeyString(owner), actions: ["mute"], nonce: newGuardNonce() });
+    assert.equal(parseGuardMessage(legacy)?.type, "invite");
+    assert.equal(isGuardMessage(legacy), true);
+});
+
+test("plain mentions of the format and broken links are ignored", () => {
+    assert.equal(isGuardMessage("I use [FriendsInVoice Guard v2] sometimes"), false);
+    assert.equal(parseGuardMessage("[🛡️ hi](<https://github.com/mPhpMaster/FriendsInVoice#fiv-guard=not*base64>)"), null);
+    assert.equal(parseGuardMessage("[🛡️ hi](<https://github.com/mPhpMaster/FriendsInVoice#fiv-guard=e30>)"), null);
+    assert.equal(parseGuardMessage("x".repeat(3001)), null);
 });

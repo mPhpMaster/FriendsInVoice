@@ -53,10 +53,18 @@ export interface GuardSealedWire {
 
 export type GuardWire = GuardKeyWire | GuardSealedWire | GuardInviteWire;
 
+export interface GuardInvite {
+    userId: string;
+    actions: GuardAction[];
+    publicKey: string;
+    nonce: string;
+}
+
 export interface GuardsStore {
     personalGuards: GuardGrant[];
     knownGuardGrants: GuardGrant[];
-    pendingGuardInvites: { userId: string; actions: GuardAction[]; publicKey: string; nonce: string; }[];
+    pendingGuardInvites: GuardInvite[];
+    declinedGuardInvites: string[];
     guardPeerKeys: { userId: string; publicKey: string; }[];
     guardBlocks: { userId: string; until: number; }[];
     guardReplay: { nonce: string; createdAt: number; }[];

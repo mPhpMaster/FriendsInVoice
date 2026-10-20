@@ -230,3 +230,14 @@
 .vc-fiv-guard-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
 .vc-fiv-guard-notice select { height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border-subtle, rgb(255 255 255 / 10%)); color: var(--text-default, #dbdee1); background: var(--background-mod-normal, rgb(255 255 255 / 6%)); font-size: 14px; }
 .vc-fiv-guard-notice option { color: var(--text-default, #dbdee1); background: var(--background-floating, #232428); }
+
+.vc-fiv-guard-invite { color: var(--text-default, #dbdee1); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; max-width: 520px; margin-top: 6px; padding: 10px 12px; border-left: 3px solid var(--brand-500); border-radius: 8px; background: var(--background-mod-normal); }
+.vc-fiv-guard-invite-sent { color: var(--text-secondary, #b5bac1); font-size: 13px; }
+.vc-fiv-guard-invite-text { display: flex; flex: 1 1 260px; flex-direction: column; gap: 3px; font-size: 13px; }
+.vc-fiv-guard-invite-text strong { color: var(--text-strong, #f2f3f5); }
+.vc-fiv-guard-invite-text span { color: var(--text-secondary, #b5bac1); }
+.vc-fiv-guard-invite-actions { display: flex; gap: 8px; }
+.vc-fiv-guard-modal { display: flex; flex-direction: column; gap: 10px; }
+.vc-fiv-guard-modal-option { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 15px; color: var(--text-default); }
+.vc-fiv-guard-modal-option input { width: 18px; height: 18px; accent-color: var(--brand-500); }
+.vc-fiv-guard-modal-note { margin: 6px 0 0; color: var(--text-secondary, #b5bac1); font-size: 13px; }

@@ -18,10 +18,12 @@ import definePlugin, { OptionType } from "@utils/types";
 import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
+import { GuardInviteCard } from "./personalGuardsCard";
 import { GuardNotificationHost } from "./personalGuardsNotice";
 import { isGuardMessage } from "./personalGuardsProtocol";
 import { clearGuardRuntime, handleGuardMessage } from "./personalGuardsRuntime";
 import { PersonalGuardsTab } from "./personalGuardsTab";
+import type { GuardGrant, GuardInvite } from "./personalGuardsTypes";
 import { SmartReplies } from "./smartReplies";
 import { UserContextPatch } from "./userContextMenu";
 import { useVoiceData } from "./voiceContent";
@@ -94,9 +96,10 @@ export const settings = definePluginSettings({
         type: OptionType.CUSTOM,
         default: [] as string[],
     },
-    personalGuards: { type: OptionType.CUSTOM, default: [] as { userId: string; actions: ("mute" | "deafen" | "disconnect")[]; }[] },
-    knownGuardGrants: { type: OptionType.CUSTOM, default: [] as { userId: string; actions: ("mute" | "deafen" | "disconnect")[]; }[] },
-    pendingGuardInvites: { type: OptionType.CUSTOM, default: [] as { userId: string; actions: ("mute" | "deafen" | "disconnect")[]; publicKey: string; nonce: string; }[] },
+    personalGuards: { type: OptionType.CUSTOM, default: [] as GuardGrant[] },
+    knownGuardGrants: { type: OptionType.CUSTOM, default: [] as GuardGrant[] },
+    pendingGuardInvites: { type: OptionType.CUSTOM, default: [] as GuardInvite[] },
+    declinedGuardInvites: { type: OptionType.CUSTOM, default: [] as string[] },
     guardBlocks: { type: OptionType.CUSTOM, default: [] as { userId: string; until: number; }[] },
     guardReplay: { type: OptionType.CUSTOM, default: [] as { nonce: string; createdAt: number; }[] },
     guardPeerKeys: { type: OptionType.CUSTOM, default: [] as { userId: string; publicKey: string; }[] },
@@ -449,6 +452,14 @@ export default definePlugin({
             );
         });
 
+        addMessageAccessory("FriendsInVoiceGuardInvite", props => {
+            const { message } = props;
+            if (!message?.author || message.author.bot || !isGuardMessage(message.content ?? "")) return null;
+            const channel = props.channel ?? ChannelStore.getChannel(message.channel_id);
+            if (!channel?.isDM()) return null;
+            return <ErrorBoundary noop><GuardInviteCard message={message} channel={channel} /></ErrorBoundary>;
+        });
+
         loadedAway.stayInVoice = settings.store.stayInVoice;
         loadedAway.neverIdle = settings.store.neverIdle;
         startQuietPeriod();
@@ -465,6 +476,7 @@ export default definePlugin({
     stop() {
         clearGuardRuntime();
         removeMessageAccessory("FriendsInVoiceSmartReplies");
+        removeMessageAccessory("FriendsInVoiceGuardInvite");
         setPageOpen(false);
         PresenceStore.removeChangeListener(onPresenceChange);
         stopUpdateTimer();

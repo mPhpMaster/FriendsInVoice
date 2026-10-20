@@ -7,6 +7,12 @@
 import type { GuardAction, GuardCommand, GuardNotice, GuardWire } from "./personalGuardsTypes";
 
 export const GUARD_ACTIONS: GuardAction[] = ["mute", "deafen", "disconnect"];
+// for menu items such as "Mute JoeShaia"
+export const GUARD_VERBS: Record<GuardAction, string> = {
+    mute: "Mute",
+    deafen: "Deafen",
+    disconnect: "Disconnect",
+};
 export const GUARD_LABELS: Record<GuardAction, string> = {
     mute: "Mute microphone",
     deafen: "Deafen",
@@ -14,6 +20,10 @@ export const GUARD_LABELS: Record<GuardAction, string> = {
 };
 
 const PREFIX = "[FriendsInVoice Guard v2] ";
+// In Discord a guard message is one masked link: only its text shows, <…> stops the link preview,
+// and the data is in the URL fragment (never sent to the site). Clicking it opens the project page.
+const LINK = "https://github.com/mPhpMaster/FriendsInVoice#fiv-guard=";
+const LINKED = /#fiv-guard=([A-Za-z0-9_\-\s]+)>?\)/;
 const SNOWFLAKE = /^\d{17,20}$/;
 const BASE64_URL = /^[A-Za-z0-9_-]+$/;
 
@@ -37,18 +47,49 @@ export function makeGrantNotice(ownerId: string, actions: GuardAction[]): GuardN
     return { kind: "grant", ownerId, actions: GUARD_ACTIONS.filter(action => actions.includes(action)), createdAt: Date.now() };
 }
 
-export function serializeWire(wire: GuardWire): string {
-    return PREFIX + JSON.stringify(wire);
+function toBase64Url(text: string): string {
+    let binary = "";
+    for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(value: string): string | null {
+    try {
+        const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+        return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, character => character.charCodeAt(0)));
+    } catch { return null; }
+}
+
+export function serializeWire(wire: GuardWire, summary = "Personal Guards message"): string {
+    // Discord doesn't render a masked link whose text has an emoji, so the shield goes before it
+    return `🛡️ [${summary}](<${LINK}${toBase64Url(JSON.stringify(wire))}>)`;
+}
+
+export function inviteSummary(actions: GuardAction[]): string {
+    return `Personal Guard invite: ${GUARD_ACTIONS.filter(action => actions.includes(action)).map(action => GUARD_LABELS[action].toLowerCase()).join(", ")}`;
 }
 
 export function isGuardMessage(content: string): boolean {
-    return content.startsWith(PREFIX);
+    return content.startsWith(PREFIX) || content.includes("#fiv-guard=");
+}
+
+function guardJson(content: string): string | null {
+    if (content.length > 3000) return null;
+    const envelopes = content.split(PREFIX).length - 1 + content.split("#fiv-guard=").length - 1;
+    // exactly one envelope: joined or pasted-together messages are rejected
+    if (envelopes !== 1) return null;
+    // messages from versions before the link format
+    if (content.startsWith(PREFIX)) return content.slice(PREFIX.length);
+    // composer extensions can insert spacing into long encoded words
+    const data = LINKED.exec(content)?.[1]?.replace(/\s/g, "");
+    return data ? fromBase64Url(data) : null;
 }
 
 export function parseGuardMessage(content: string): GuardWire | null {
-    if (!content.startsWith(PREFIX) || content.length > 3000) return null;
+    const json = guardJson(content);
+    if (!json) return null;
     let data: unknown;
-    try { data = JSON.parse(content.slice(PREFIX.length)); } catch { return null; }
+    try { data = JSON.parse(json); } catch { return null; }
     if (!data || typeof data !== "object") return null;
     const value = data as Record<string, unknown>;
     // Discord composer extensions can insert spacing into long encoded words.
