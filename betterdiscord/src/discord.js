@@ -28,6 +28,8 @@ export class DiscordBridge {
         this.voiceActions = webpack.getByKeys("toggleSelfMute", "toggleSelfDeaf");
         this.voiceChannelActions = webpack.getByKeys("selectVoiceChannel", "selectChannel");
         this.profileActions = webpack.getByKeys("openUserProfileModal");
+        // Discord's router exports transitionTo under a minified name; find it by its log message
+        this.transitionTo = webpack.getByStrings?.("transitionTo - Transitioning to", IN_EXPORTS);
         if (!this.userStore || !this.channelStore || !this.voiceStore || !this.relationshipStore || !this.permissionStore || !this.dispatcher)
             throw new Error("Discord stores or dispatcher are unavailable in this client build.");
     }
@@ -60,6 +62,12 @@ export class DiscordBridge {
         const mine = this.myVoiceChannel();
         return !!mine && !!this.voiceStore.getVoiceStatesForChannel?.(mine)?.[id];
     }
+    navigate(path) {
+        if (typeof this.transitionTo !== "function") throw new Error("Discord's navigation is unavailable.");
+        this.transitionTo(path);
+    }
+    openChannel(guildId, channelId) { this.navigate(`/channels/${guildId ?? "@me"}/${channelId}`); }
+    openGuild(guildId) { this.navigate(`/channels/${guildId}`); }
     isDm(channel) { return !!channel?.isDM?.(); }
     channel(id) { return this.channelStore.getChannel(id); }
     selectedChannel() { return this.selectedChannelStore?.getChannelId?.() ?? null; }

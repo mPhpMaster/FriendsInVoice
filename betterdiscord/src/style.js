@@ -14,6 +14,11 @@ export const STYLE = `
 .fivbd-card h3{margin:0 0 7px;font-size:15px}.fivbd-card p{margin:5px 0;color:var(--text-muted)}
 .fivbd-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.fivbd-person{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-subtle)}
 .fivbd-muted{color:var(--text-muted)}.fivbd-guard-options{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}.fivbd-guard-options label{display:flex;align-items:center;gap:4px}
+.fivbd-log{display:flex;flex-direction:column;margin:12px 0;border:1px solid var(--border-subtle);border-radius:10px;overflow:hidden}
+.fivbd-log-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 12px;line-height:1.5}.fivbd-log-row+.fivbd-log-row{border-top:1px solid var(--border-subtle)}
+.fivbd-log-myroom{box-shadow:inset 3px 0 0 #f0b232}.fivbd-log-what{flex:1 1 auto;min-width:0}
+.fivbd-log-link{font-weight:600;cursor:pointer}.fivbd-log-link:hover{text-decoration:underline}.fivbd-log-place{font-weight:600}
+.fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
 `;
