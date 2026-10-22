@@ -13,6 +13,7 @@ const cl = classNameFactory("vc-fiv-");// ---------- tabs ----------
 
 export function VoiceTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
     const { rooms, myChannel } = data;
+    const { hidden } = settings.use(["hidden"]);
     const [query, setQuery] = useState("");
     const q = query.trim().toLowerCase();
 
@@ -39,6 +40,16 @@ export function VoiceTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
             <div className={cl("grid")}>
                 {filtered.map(room => <RoomCard key={room.channel.id} room={room} inThisRoom={room.channel.id === myChannel} />)}
             </div>
+            {hidden.length > 0 && (
+                <div className={cl("sections")}>
+                    <AlertSection
+                        listKey="hidden"
+                        title="🙈 Hidden"
+                        description="These people don't show up in “In voice” and don't count in the badge. Click ✕ to show someone again, or right-click them → Show in In voice."
+                        friendIds={data.friendIds}
+                    />
+                </div>
+            )}
         </>
     );
 }
