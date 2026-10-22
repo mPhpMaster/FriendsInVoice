@@ -67,9 +67,9 @@ var AlertService = class {
       const before = this.previousVoice.get(id);
       this.previousVoice.set(id, now);
       if (Date.now() < this.quietUntil || before === void 0 || before || !now) continue;
-      const room = this.bridge.channel(now);
-      const place = room ? this.bridge.roomDescription(room) : null;
-      this.api.UI.showNotice(`${this.bridge.name(id)} joined ${place?.roomName ?? "voice"}.`, {
+      const room2 = this.bridge.channel(now);
+      const place2 = room2 ? this.bridge.roomDescription(room2) : null;
+      this.api.UI.showNotice(`${this.bridge.name(id)} joined ${place2?.roomName ?? "voice"}.`, {
         buttons: [{ label: "Show rooms", onClick: () => this.openPage("voice") }]
       });
     }
@@ -205,6 +205,7 @@ var DiscordBridge = class {
     this.voiceActions = webpack.getByKeys("toggleSelfMute", "toggleSelfDeaf");
     this.voiceChannelActions = webpack.getByKeys("selectVoiceChannel", "selectChannel");
     this.profileActions = webpack.getByKeys("openUserProfileModal");
+    this.transitionTo = webpack.getByStrings?.("transitionTo - Transitioning to", IN_EXPORTS);
     if (!this.userStore || !this.channelStore || !this.voiceStore || !this.relationshipStore || !this.permissionStore || !this.dispatcher)
       throw new Error("Discord stores or dispatcher are unavailable in this client build.");
   }
@@ -247,6 +248,16 @@ var DiscordBridge = class {
   sharesVoice(id) {
     const mine = this.myVoiceChannel();
     return !!mine && !!this.voiceStore.getVoiceStatesForChannel?.(mine)?.[id];
+  }
+  navigate(path) {
+    if (typeof this.transitionTo !== "function") throw new Error("Discord's navigation is unavailable.");
+    this.transitionTo(path);
+  }
+  openChannel(guildId, channelId) {
+    this.navigate(`/channels/${guildId ?? "@me"}/${channelId}`);
+  }
+  openGuild(guildId) {
+    this.navigate(`/channels/${guildId}`);
   }
   isDm(channel) {
     return !!channel?.isDM?.();
@@ -1594,6 +1605,11 @@ var STYLE = `
 .fivbd-card h3{margin:0 0 7px;font-size:15px}.fivbd-card p{margin:5px 0;color:var(--text-muted)}
 .fivbd-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.fivbd-person{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-subtle)}
 .fivbd-muted{color:var(--text-muted)}.fivbd-guard-options{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}.fivbd-guard-options label{display:flex;align-items:center;gap:4px}
+.fivbd-log{display:flex;flex-direction:column;margin:12px 0;border:1px solid var(--border-subtle);border-radius:10px;overflow:hidden}
+.fivbd-log-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 12px;line-height:1.5}.fivbd-log-row+.fivbd-log-row{border-top:1px solid var(--border-subtle)}
+.fivbd-log-myroom{box-shadow:inset 3px 0 0 #f0b232}.fivbd-log-what{flex:1 1 auto;min-width:0}
+.fivbd-log-link{font-weight:600;cursor:pointer}.fivbd-log-link:hover{text-decoration:underline}.fivbd-log-place{font-weight:600}
+.fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
 `;
@@ -1719,8 +1735,8 @@ function renderPicker(parent, view, key) {
     const query = input.value.trim().toLowerCase();
     if (!query) return;
     const ids = bridge.relationshipStore.getFriendIDs?.() ?? [];
-    const matches = ids.filter((id) => !data.listHas(key, id) && `${bridge.name(id)} ${bridge.user(id)?.username ?? ""} ${id}`.toLowerCase().includes(query)).slice(0, 12);
-    for (const id of matches) {
+    const matches2 = ids.filter((id) => !data.listHas(key, id) && `${bridge.name(id)} ${bridge.user(id)?.username ?? ""} ${id}`.toLowerCase().includes(query)).slice(0, 12);
+    for (const id of matches2) {
       const card = element("div", "fivbd-card");
       add(
         card,
@@ -1732,7 +1748,7 @@ function renderPicker(parent, view, key) {
       );
       results.append(card);
     }
-    if (!matches.length) results.append(paragraph("No matching friends found.", "fivbd-muted"));
+    if (!matches2.length) results.append(paragraph("No matching friends found.", "fivbd-muted"));
   }
   input.addEventListener("input", update);
   add(parent, input, results);
@@ -1749,8 +1765,8 @@ function renderSection(parent, view, definition) {
   const grid = element("div", "fivbd-grid");
   for (const id of ids) {
     const card = element("section", "fivbd-card");
-    const room = bridge.voiceChannel(id);
-    const channel = room && bridge.channel(room);
+    const room2 = bridge.voiceChannel(id);
+    const channel = room2 && bridge.channel(room2);
     add(
       card,
       heading(bridge.name(id)),
@@ -1774,6 +1790,148 @@ function renderSection(parent, view, definition) {
 function renderListTab(parent, view, tab) {
   const definitions = TAB_LISTS[tab] ?? [];
   for (const definition of definitions) renderSection(parent, view, definition);
+}
+
+// src/viewLog.js
+var FILTERS = [["all", "Everything"], ["friends", "Friends"], ["myroom", "My room"], ["me", "Me"]];
+var ICONS = { join: "\u27A1\uFE0F", leave: "\u2B05\uFE0F", move: "\u{1F500}" };
+function openSidebarMenu(listItemId, event) {
+  const target = document.querySelector(`[data-list-item-id="${listItemId}"]`);
+  if (!target) return false;
+  const { clientX, clientY, screenX, screenY } = event;
+  setTimeout(() => target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX, clientY, screenX, screenY })));
+  return true;
+}
+function menu(view, event, items) {
+  const open = view.api.ContextMenu?.open, build = view.api.ContextMenu?.buildMenu;
+  if (open && build) open(event, build(items.filter(Boolean)));
+}
+function rightClick(node, handler) {
+  node.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handler(event);
+  });
+}
+function copy(text) {
+  void navigator.clipboard?.writeText(text);
+}
+function guarded(view, run) {
+  return () => {
+    try {
+      run();
+      view.close();
+    } catch (error) {
+      view.error(error);
+    }
+  };
+}
+function link(text, className, title) {
+  const node = element("span", `fivbd-log-link ${className}`, text);
+  node.title = title;
+  return node;
+}
+function person(view, entry) {
+  const node = link(entry.isMe ? "You" : entry.userName, "fivbd-log-person", entry.isMe ? "" : "Click to message \xB7 Right-click for options");
+  if (entry.isMe) return node;
+  node.addEventListener("click", () => void view.bridge.openDm(entry.userId).then(() => view.close()).catch((error) => view.error(error)));
+  rightClick(node, (event) => menu(view, event, [
+    { label: "Profile", action: () => {
+      try {
+        view.bridge.openProfile(entry.userId);
+      } catch (error) {
+        view.error(error);
+      }
+    } },
+    { label: "Message", action: () => void view.bridge.openDm(entry.userId).then(() => view.close()).catch((error) => view.error(error)) },
+    { label: "Copy User ID", action: () => copy(entry.userId) }
+  ]));
+  return node;
+}
+function room(view, info) {
+  const node = link(`\u{1F50A} ${info.roomName}`, "fivbd-log-room", "Click to open \xB7 Right-click for options");
+  node.addEventListener("click", guarded(view, () => view.bridge.openChannel(info.guildId, info.id)));
+  rightClick(node, (event) => {
+    if (openSidebarMenu(`channels___${info.id}`, event)) return;
+    const channel = view.bridge.channel(info.id);
+    menu(view, event, [
+      channel && !view.bridge.joinBlocker(channel) && view.bridge.voiceChannelActions?.selectVoiceChannel && { label: "Join Voice", action: () => view.bridge.voiceChannelActions.selectVoiceChannel(info.id) },
+      { label: "Open Chat", action: guarded(view, () => view.bridge.openChannel(info.guildId, info.id)) },
+      info.guildId && { label: "Copy Link", action: () => copy(`https://discord.com/channels/${info.guildId}/${info.id}`) },
+      { label: "Copy Channel ID", action: () => copy(info.id) }
+    ]);
+  });
+  return node;
+}
+function place(view, info) {
+  if (!info.guildId) return element("span", "fivbd-log-place", info.place);
+  const node = link(info.place, "fivbd-log-place", "Click to open the server \xB7 Right-click for options");
+  node.addEventListener("click", guarded(view, () => view.bridge.openGuild(info.guildId)));
+  rightClick(node, (event) => {
+    if (openSidebarMenu(`guildsnav___${info.guildId}`, event)) return;
+    menu(view, event, [
+      { label: "Open Server", action: guarded(view, () => view.bridge.openGuild(info.guildId)) },
+      { label: "Copy Server ID", action: () => copy(info.guildId) }
+    ]);
+  });
+  return node;
+}
+var where = (view, info) => [room(view, info), document.createTextNode(" in "), place(view, info)];
+function describe(view, entry) {
+  const { from, to } = entry;
+  if (entry.kind === "join") return ["joined ", ...where(view, to)];
+  if (entry.kind === "leave") return ["left ", ...where(view, from)];
+  if (from.guildId === to.guildId) return ["moved from ", room(view, from), " to ", room(view, to), " in ", place(view, to)];
+  return ["moved from ", ...where(view, from), " to ", ...where(view, to)];
+}
+function matches(entry, filter, query) {
+  if (filter === "friends" && !entry.isFriend) return false;
+  if (filter === "myroom" && !entry.myRoom) return false;
+  if (filter === "me" && !entry.isMe) return false;
+  return !query || [entry.userName, entry.from?.roomName, entry.from?.place, entry.to?.roomName, entry.to?.place].some((text) => text?.toLowerCase().includes(query));
+}
+function renderLogTab(parent, view) {
+  const log = view.voiceLog;
+  view.logFilter ??= "all";
+  const input = element("input", "fivbd-search");
+  input.type = "search";
+  input.placeholder = "Search people, servers, or voice rooms\u2026";
+  input.setAttribute("aria-label", input.placeholder);
+  const filters = element("div", "fivbd-actions");
+  for (const [id, title] of FILTERS)
+    filters.append(button(title, () => {
+      view.logFilter = id;
+      view.render();
+    }, id === view.logFilter ? "active" : ""));
+  if (log.entries.length) filters.append(button("Clear", () => {
+    log.clear();
+    view.render();
+  }));
+  const list = element("div", "fivbd-log");
+  function update() {
+    const query = input.value.trim().toLowerCase();
+    const shown = log.entries.filter((entry) => matches(entry, view.logFilter, query));
+    list.replaceChildren();
+    if (!shown.length) {
+      list.append(paragraph(log.entries.length ? "Nothing matches." : "Nothing yet. Every time someone joins, leaves or moves between voice rooms in your servers, it shows up here, including people coming into and leaving your own room.", "fivbd-empty"));
+      return;
+    }
+    for (const entry of shown) {
+      const row = element("div", `fivbd-log-row${entry.myRoom ? " fivbd-log-myroom" : ""}`);
+      const time = element("span", "fivbd-muted", new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      time.title = new Date(entry.time).toLocaleString();
+      add(row, time, element("span", "", ICONS[entry.kind]), person(view, entry));
+      const what = element("span", "fivbd-log-what");
+      what.append(" ", ...describe(view, entry));
+      row.append(what);
+      if (entry.myRoom) row.append(element("span", "fivbd-log-pill", "YOUR ROOM"));
+      if (entry.isFriend && !entry.isMe) row.append(element("span", "fivbd-log-pill", "FRIEND"));
+      list.append(row);
+    }
+  }
+  input.addEventListener("input", update);
+  add(parent, input, filters, list, paragraph("Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log keeps the last 500 events until you restart Discord.", "fivbd-muted"));
+  update();
 }
 
 // src/viewReplies.js
@@ -1832,15 +1990,15 @@ function renderVoiceTab(parent, view) {
   function update() {
     results.replaceChildren();
     const query = input.value.trim().toLowerCase();
-    const rooms = view.bridge.rooms(view.data.value.watchlist, view.data.value.hidden).filter((room) => !query || `${room.place} ${room.roomName} ${room.members.map((member) => member.name).join(" ")}`.toLowerCase().includes(query));
+    const rooms = view.bridge.rooms(view.data.value.watchlist, view.data.value.hidden).filter((room2) => !query || `${room2.place} ${room2.roomName} ${room2.members.map((member) => member.name).join(" ")}`.toLowerCase().includes(query));
     if (!rooms.length) {
       results.append(paragraph(query ? "Nothing matches your search." : "No friends in visible voice rooms.", "fivbd-empty"));
       return;
     }
-    for (const room of rooms) {
+    for (const room2 of rooms) {
       const card = element("section", "fivbd-card");
-      add(card, element("h3", "", room.roomName), paragraph(room.place));
-      for (const member of room.members) {
+      add(card, element("h3", "", room2.roomName), paragraph(room2.place));
+      for (const member of room2.members) {
         const row = element("div", "fivbd-person");
         const flags = [member.mute && "muted", member.deaf && "deafened", member.stream && "streaming"].filter(Boolean).join(", ");
         add(
@@ -1853,16 +2011,16 @@ function renderVoiceTab(parent, view) {
         );
         card.append(row);
       }
-      if (room.hiddenCount) card.append(paragraph(`\u{1F648} ${room.hiddenCount} hidden ${room.hiddenCount === 1 ? "person" : "people"}`, "fivbd-muted"));
-      if (view.bridge.voiceChannel(view.bridge.currentId()) !== room.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
-        const join = button(room.blocker ?? "Join voice", () => {
+      if (room2.hiddenCount) card.append(paragraph(`\u{1F648} ${room2.hiddenCount} hidden ${room2.hiddenCount === 1 ? "person" : "people"}`, "fivbd-muted"));
+      if (view.bridge.voiceChannel(view.bridge.currentId()) !== room2.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
+        const join = button(room2.blocker ?? "Join voice", () => {
           try {
-            view.bridge.voiceChannelActions.selectVoiceChannel(room.channelId);
+            view.bridge.voiceChannelActions.selectVoiceChannel(room2.channelId);
           } catch (error) {
             view.error(error);
           }
         });
-        join.disabled = !!room.blocker;
+        join.disabled = !!room2.blocker;
         card.append(join);
       }
       results.append(card);
@@ -1900,7 +2058,8 @@ var TABS = [
   ["alerts", "Alerts"],
   ["runaway", "Run Away"],
   ["guards", "Personal Guards"],
-  ["replies", "Smart replies"]
+  ["replies", "Smart replies"],
+  ["log", "Log"]
 ];
 var Dashboard = class {
   constructor(api, bridge, data, version) {
@@ -1968,6 +2127,7 @@ var Dashboard = class {
       if (this.tab === "voice") renderVoiceTab(body, this);
       else if (["mine", "alerts", "runaway"].includes(this.tab)) renderListTab(body, this, this.tab);
       else if (this.tab === "guards") renderGuardsTab(body, this);
+      else if (this.tab === "log") renderLogTab(body, this);
       else renderRepliesTab(body, this);
     } catch (error) {
       body.textContent = `This panel could not load: ${String(error)}`;
@@ -1981,6 +2141,75 @@ var Dashboard = class {
     add(panel, head, tabs, body, foot);
     this.shade.replaceChildren(panel);
     body.scrollTop = scroll;
+  }
+};
+
+// src/voiceLog.js
+var MAX_ENTRIES = 500;
+var VoiceLog = class {
+  constructor(bridge, data) {
+    this.bridge = bridge;
+    this.data = data;
+    this.entries = [];
+    this.lastChannel = /* @__PURE__ */ new Map();
+    this.nextKey = 0;
+    this.quietUntil = Date.now() + 15e3;
+    this.onChange = null;
+  }
+  seed() {
+    this.lastChannel.clear();
+    for (const states of Object.values(this.bridge.voiceStore.getAllVoiceStates?.() ?? {}))
+      for (const state of Object.values(states ?? {})) if (state?.channelId) this.lastChannel.set(state.userId, state.channelId);
+  }
+  // after (re)connecting Discord sends voice states in bulk; don't log those, and re-read where everyone is once settled
+  reconnect() {
+    this.quietUntil = Date.now() + 15e3;
+    clearTimeout(this.reseedTimer);
+    this.reseedTimer = setTimeout(() => this.seed(), 15e3);
+  }
+  stop() {
+    clearTimeout(this.reseedTimer);
+  }
+  clear() {
+    this.entries = [];
+    this.onChange?.();
+  }
+  room(channelId) {
+    const channel = channelId && this.bridge.channel(channelId);
+    return channel ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
+  }
+  onUpdates(voiceStates = []) {
+    const me = this.bridge.currentId();
+    const myRoomBefore = me ? this.lastChannel.get(me) ?? null : null;
+    let added = false;
+    for (const state of voiceStates) {
+      if (!state?.userId) continue;
+      const now = state.channelId ?? null;
+      const prev = this.lastChannel.has(state.userId) ? this.lastChannel.get(state.userId) : state.oldChannelId ?? null;
+      this.lastChannel.set(state.userId, now);
+      if (prev === now || Date.now() < this.quietUntil) continue;
+      const isMe = state.userId === me;
+      if (!isMe && this.data.value.hidden.includes(state.userId)) continue;
+      const from = this.room(prev), to = this.room(now);
+      if (!from && !to) continue;
+      const myRooms = [this.bridge.myVoiceChannel(), myRoomBefore].filter(Boolean);
+      this.entries.unshift({
+        key: this.nextKey++,
+        time: Date.now(),
+        kind: prev && now ? "move" : now ? "join" : "leave",
+        userId: state.userId,
+        userName: this.bridge.name(state.userId, (to ?? from).guildId),
+        isMe,
+        isFriend: !!this.bridge.relationshipStore.isFriend?.(state.userId),
+        from,
+        to,
+        myRoom: !isMe && myRooms.some((id) => id === prev || id === now)
+      });
+      added = true;
+    }
+    if (!added) return;
+    this.entries = this.entries.slice(0, MAX_ENTRIES);
+    this.onChange?.();
   }
 };
 
@@ -2001,15 +2230,26 @@ module.exports = class FriendsInVoice {
       this.guards = new GuardService(this.api, this.bridge, this.data, (tab) => this.view.open(tab));
       this.replies = new ReplyService(this.api, this.bridge, this.data);
       this.alerts = new AlertService(this.api, this.bridge, this.data, (tab) => this.view.open(tab), this.version);
-      Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts });
+      this.voiceLog = new VoiceLog(this.bridge, this.data);
+      this.voiceLog.onChange = () => {
+        if (this.view.tab === "log") this.view.refresh();
+      };
+      Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog });
       this.view.start();
       this.unsubscribers.push(installUserMenu(this.api, this.view));
       const onMessage = (event) => void this.guards.onMessage(event?.message).catch((error) => this.api.Logger.error("Guard message failed", error));
-      const onConnect = () => this.alerts.reconnect();
+      const onConnect = () => {
+        this.alerts.reconnect();
+        this.voiceLog.reconnect();
+      };
+      const onVoice = (event) => this.voiceLog.onUpdates(event?.voiceStates);
       this.bridge.dispatcher.subscribe("MESSAGE_CREATE", onMessage);
       this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("MESSAGE_CREATE", onMessage));
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
+      this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);
+      this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("VOICE_STATE_UPDATES", onVoice));
+      this.voiceLog.seed();
       this.alerts.seed();
       this.pollTimer = setInterval(() => {
         this.alerts.poll();
@@ -2035,6 +2275,7 @@ module.exports = class FriendsInVoice {
       }
     }
     this.guards?.stop();
+    this.voiceLog?.stop();
     this.view?.stop();
     this.started = false;
   }
