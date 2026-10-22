@@ -13,6 +13,7 @@ const cl = classNameFactory("vc-fiv-");// ---------- tabs ----------
 
 export function VoiceTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
     const { rooms, myChannel } = data;
+    const { hidden } = settings.use(["hidden"]);
     const [query, setQuery] = useState("");
     const q = query.trim().toLowerCase();
 
@@ -39,7 +40,24 @@ export function VoiceTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
             <div className={cl("grid")}>
                 {filtered.map(room => <RoomCard key={room.channel.id} room={room} inThisRoom={room.channel.id === myChannel} />)}
             </div>
+            {hidden.length > 0 && (
+                <div className={cl("hidden-bar")}>
+                    <span className={cl("reason-label")} title="Hidden people don't show up in In voice or count in the badge">🙈 Hidden</span>
+                    {hidden.map(id => <HiddenChip key={id} id={id} />)}
+                </div>
+            )}
         </>
+    );
+}
+
+function HiddenChip({ id }: { id: string; }) {
+    const user = useUser(id);
+    return (
+        <span className={cl("chip", "chip-hidden", "clickable")} {...personProps(user)}>
+            {user ? <Avatar user={user} size={18} /> : <span className={cl("avatar", "placeholder")} style={{ width: 18, height: 18 }} />}
+            {user ? displayName(user, null) : "Loading…"}
+            <span className={cl("chip-show")} title="Show in In voice again" onClick={e => { e.stopPropagation(); toggleInList("hidden", id); }}>✕</span>
+        </span>
     );
 }
 

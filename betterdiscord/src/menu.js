@@ -40,6 +40,7 @@ export function installUserMenu(api, view) {
                     listItem(view, id, "notifyOnline", "Notify when online", "Stop online alerts"),
                     listItem(view, id, "notifyVoice", "Notify when in voice", "Stop voice alerts"),
                     listItem(view, id, "blacklist", "Add to Run Away", "Remove from Run Away"),
+                    listItem(view, id, "hidden", "Hide from In Voice", "Show in In Voice"),
                     { type: "submenu", id: "fivbd-guards", label: "Personal Guards", items: guardItems }
                 ]
             }]);
