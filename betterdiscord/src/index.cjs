@@ -6,6 +6,7 @@ import { installUserMenu } from "./menu.js";
 import { ReplyService } from "./replies.js";
 import { settingsPanel } from "./settingsUi.js";
 import { Dashboard } from "./view.js";
+import { VoiceLog } from "./voiceLog.js";
 
 module.exports = class FriendsInVoice {
     constructor(meta) {
@@ -23,15 +24,21 @@ module.exports = class FriendsInVoice {
             this.guards = new GuardService(this.api, this.bridge, this.data, tab => this.view.open(tab));
             this.replies = new ReplyService(this.api, this.bridge, this.data);
             this.alerts = new AlertService(this.api, this.bridge, this.data, tab => this.view.open(tab), this.version);
-            Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts });
+            this.voiceLog = new VoiceLog(this.bridge, this.data);
+            this.voiceLog.onChange = () => { if (this.view.tab === "log") this.view.refresh(); };
+            Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog });
             this.view.start();
             this.unsubscribers.push(installUserMenu(this.api, this.view));
             const onMessage = event => void this.guards.onMessage(event?.message).catch(error => this.api.Logger.error("Guard message failed", error));
-            const onConnect = () => this.alerts.reconnect();
+            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); };
+            const onVoice = event => this.voiceLog.onUpdates(event?.voiceStates);
             this.bridge.dispatcher.subscribe("MESSAGE_CREATE", onMessage);
             this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("MESSAGE_CREATE", onMessage));
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
+            this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);
+            this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("VOICE_STATE_UPDATES", onVoice));
+            this.voiceLog.seed();
             this.alerts.seed();
             this.pollTimer = setInterval(() => { this.alerts.poll(); this.view.refresh(); }, 5000);
             this.updateTimer = setInterval(() => void this.alerts.checkUpdate(), 6 * 60 * 60 * 1000);
@@ -50,6 +57,7 @@ module.exports = class FriendsInVoice {
             try { unsubscribe?.(); } catch (error) { this.api.Logger.error("Cleanup failed", error); }
         }
         this.guards?.stop();
+        this.voiceLog?.stop();
         this.view?.stop();
         this.started = false;
     }
