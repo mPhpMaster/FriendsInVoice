@@ -9,7 +9,7 @@ export function renderVoiceTab(parent, view) {
     function update() {
         results.replaceChildren();
         const query = input.value.trim().toLowerCase();
-        const rooms = view.bridge.rooms(view.data.value.watchlist).filter(room =>
+        const rooms = view.bridge.rooms(view.data.value.watchlist, view.data.value.hidden).filter(room =>
             !query || `${room.place} ${room.roomName} ${room.members.map(member => member.name).join(" ")}`.toLowerCase().includes(query));
         if (!rooms.length) { results.append(paragraph(query ? "Nothing matches your search." : "No friends in visible voice rooms.", "fivbd-empty")); return; }
         for (const room of rooms) {
@@ -22,6 +22,7 @@ export function renderVoiceTab(parent, view) {
                     button(member.watched ? "★" : "☆", () => { view.data.toggleList("watchlist", member.id); update(); }));
                 card.append(row);
             }
+            if (room.hiddenCount) card.append(paragraph(`🙈 ${room.hiddenCount} hidden ${room.hiddenCount === 1 ? "person" : "people"}`, "fivbd-muted"));
             if (view.bridge.voiceChannel(view.bridge.currentId()) !== room.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
                 const join = button(room.blocker ?? "Join voice", () => {
                     try { view.bridge.voiceChannelActions.selectVoiceChannel(room.channelId); } catch (error) { view.error(error); }
@@ -35,4 +36,19 @@ export function renderVoiceTab(parent, view) {
     input.addEventListener("input", update);
     add(parent, input, results);
     update();
+    renderHidden(parent, view);
+}
+
+function renderHidden(parent, view) {
+    const ids = view.data.value.hidden;
+    if (!ids.length) return;
+    add(parent, element("h3", "", `🙈 Hidden (${ids.length})`),
+        paragraph("These people don't show up in In Voice. Show someone again here, or right-click them → Show in In Voice.", "fivbd-muted"));
+    const list = element("div", "fivbd-grid");
+    for (const id of ids) {
+        const row = element("div", "fivbd-person");
+        add(row, element("span", "", view.bridge.name(id)), button("Show", () => { view.data.toggleList("hidden", id); view.render(); }));
+        list.append(row);
+    }
+    parent.append(list);
 }

@@ -241,3 +241,4 @@
 .vc-fiv-guard-modal-option { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 15px; color: var(--text-default); }
 .vc-fiv-guard-modal-option input { width: 18px; height: 18px; accent-color: var(--brand-500); }
 .vc-fiv-guard-modal-note { margin: 6px 0 0; color: var(--text-secondary, #b5bac1); font-size: 13px; }
+.vc-fiv-hidden-note { margin-top: 6px; font-size: 12px; }

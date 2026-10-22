@@ -15,7 +15,7 @@ import { ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildSto
 import { inList, isOnline, openPrivateChannel,setPageOpen, settings, toggleInList } from ".";
 const cl = classNameFactory("vc-fiv-");
 const { selectVoiceChannel } = findByPropsLazy("selectVoiceChannel", "selectChannel");
-export type ListKey = "watchlist" | "notifyOnline" | "blacklist" | "notifyVoice";// ---------- data ----------
+export type ListKey = "watchlist" | "notifyOnline" | "blacklist" | "notifyVoice" | "hidden";// ---------- data ----------
 
 export interface Member {
     user: User;
@@ -36,6 +36,8 @@ export interface Room {
     members: Member[];
     reasons: Member[];
     hasFriend: boolean;
+    /** people in the room left out because they're on the Hidden list */
+    hiddenCount: number;
 }
 
 export function displayName(user: User, guildId: string | null) {
@@ -70,13 +72,18 @@ export function describeChannel(channel: Channel) {
     return { place: "Group call", roomName: channel.name || "Group DM", icon: null };
 }
 
-function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watched: Set<string>, myId?: string): Room {
+function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watched: Set<string>, hidden: Set<string>, myId?: string): Room {
     const members: Member[] = [];
+    let hiddenCount = 0;
     for (const s of states) {
         const user = UserStore.getUser(s.userId);
         if (!user) continue;
 
         const isMe = user.id === myId;
+        if (!isMe && hidden.has(user.id)) {
+            hiddenCount++;
+            continue;
+        }
         members.push({
             user,
             name: displayName(user, channel.guild_id ?? null),
@@ -98,15 +105,18 @@ function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watc
         ...describeChannel(channel),
         members,
         reasons,
-        hasFriend: reasons.some(m => m.isFriend)
+        hasFriend: reasons.some(m => m.isFriend),
+        hiddenCount
     };
 }
 
-function collect(watchlist: string[], extra: string | null) {
+function collect(watchlist: string[], hiddenList: string[], extra: string | null) {
     const friendIds = new Set(RelationshipStore.getFriendIDs());
     const watched = new Set(watchlist);
+    const hidden = new Set(hiddenList);
     const myId = UserStore.getCurrentUser()?.id;
-    const tracked = (id: string) => friendIds.has(id) || watched.has(id) || id === extra;
+    // hidden people don't bring a room into the list; the person the page was opened for always does
+    const tracked = (id: string) => id === extra || (!hidden.has(id) && (friendIds.has(id) || watched.has(id)));
 
     const statesByChannel = new Map<string, any[]>();
     for (const states of Object.values(VoiceStateStore.getAllVoiceStates() ?? {})) {
@@ -127,9 +137,10 @@ function collect(watchlist: string[], extra: string | null) {
         const channel = ChannelStore.getChannel(channelId);
         if (!channel) continue;
 
-        const room = buildRoom(channel, states, friendIds, watched, myId);
+        const room = buildRoom(channel, states, friendIds, watched, hidden, myId);
         allRooms.push(room);
-        for (const m of room.members) roomByUser.set(m.user.id, room);
+        // hidden people too, so My list and "Where they are now" still find them
+        for (const s of states) roomByUser.set(s.userId, room);
     }
 
     // the home page only lists rooms that have at least one friend in them
@@ -141,11 +152,11 @@ function collect(watchlist: string[], extra: string | null) {
 }
 
 export function useVoiceData(extra: string | null = null) {
-    const { watchlist } = settings.use(["watchlist"]);
+    const { watchlist, hidden } = settings.use(["watchlist", "hidden"]);
     const voiceVersion = useStateFromStores([VoiceStateStore], () => VoiceStateStore.getVoiceStateVersion());
     const relVersion = useStateFromStores([RelationshipStore], () => RelationshipStore.getVersion());
     const myChannel = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getVoiceChannelId());
-    const data = useMemo(() => collect(watchlist, extra), [voiceVersion, relVersion, watchlist, extra]);
+    const data = useMemo(() => collect(watchlist, hidden, extra), [voiceVersion, relVersion, watchlist, hidden, extra]);
     return { ...data, watchlist, myChannel };
 }
 
@@ -353,6 +364,11 @@ export function RoomCard({ room, inThisRoom }: { room: Room; inThisRoom: boolean
             <div className={cl("members")}>
                 {room.members.map(m => <MemberRow key={m.user.id} member={m} />)}
             </div>
+            {room.hiddenCount > 0 && (
+                <div className={cl("muted", "hidden-note")} title="People on your Hidden list. Right-click someone → Show in In voice to bring them back">
+                    🙈 {room.hiddenCount} hidden {room.hiddenCount === 1 ? "person" : "people"}
+                </div>
+            )}
         </div>
     );
 }
