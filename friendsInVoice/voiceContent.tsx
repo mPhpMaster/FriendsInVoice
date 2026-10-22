@@ -173,7 +173,7 @@ function isFull(channel: Channel) {
     return Object.keys(VoiceStateStore.getVoiceStatesForChannel(channel.id) ?? {}).length >= limit;
 }
 
-function joinRoom(channel: Channel) {
+export function joinRoom(channel: Channel) {
     if (!canJoin(channel)) {
         showToast({ text: "You don't have permission to join this room", variant: "critical" });
         return;
