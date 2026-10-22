@@ -13,6 +13,7 @@ import { openPageFor,openPrivateChannel, setPageOpen, settings } from ".";
 import type { UpdateStatus } from "./updateTypes";
 import { isNewer } from "./updateVersion";
 import { describeChannel, displayName } from "./voiceContent";
+import { seedVoiceLog } from "./voiceLog";
 const StatusSettings = getUserSettingLazy<string>("status", "status")!;
 const VERSION = "1.12.0";
 const REPO = "mPhpMaster/FriendsInVoice";// ---------- lists ----------
@@ -87,8 +88,11 @@ export function startQuietPeriod() {
     reseedTimer = setTimeout(() => {
         seedStatuses();
         seedVoiceChannels();
+        seedVoiceLog();
     }, 15_000);
 }
+
+export const isQuiet = () => Date.now() < quietUntil;
 
 export const isOnline = (status?: string) => !!status && status !== "offline" && status !== "invisible";
 

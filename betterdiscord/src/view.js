@@ -2,12 +2,13 @@ import { add, button, element } from "./dom.js";
 import { STYLE } from "./style.js";
 import { renderGuardsTab } from "./viewGuards.js";
 import { renderListTab } from "./viewLists.js";
+import { renderLogTab } from "./viewLog.js";
 import { renderRepliesTab } from "./viewReplies.js";
 import { renderVoiceTab } from "./viewVoice.js";
 
 const TABS = [
     ["voice", "In Voice"], ["mine", "My List"], ["alerts", "Alerts"],
-    ["runaway", "Run Away"], ["guards", "Personal Guards"], ["replies", "Smart replies"]
+    ["runaway", "Run Away"], ["guards", "Personal Guards"], ["replies", "Smart replies"], ["log", "Log"]
 ];
 
 export class Dashboard {
@@ -69,6 +70,7 @@ export class Dashboard {
             if (this.tab === "voice") renderVoiceTab(body, this);
             else if (["mine", "alerts", "runaway"].includes(this.tab)) renderListTab(body, this, this.tab);
             else if (this.tab === "guards") renderGuardsTab(body, this);
+            else if (this.tab === "log") renderLogTab(body, this);
             else renderRepliesTab(body, this);
         } catch (error) { body.textContent = `This panel could not load: ${String(error)}`; }
         const foot = element("footer", "fivbd-foot");
