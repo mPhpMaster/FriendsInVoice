@@ -101,13 +101,14 @@ var AlertService = class {
 };
 
 // src/data.js
-var LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice"];
+var LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "hidden"];
 var ACTIONS = ["mute", "deafen", "disconnect"];
 var DEFAULTS = {
   watchlist: [],
   notifyOnline: [],
   blacklist: [],
   notifyVoice: [],
+  hidden: [],
   notifyOnce: true,
   smartReplies: true,
   smartRepliesAi: false,
@@ -297,10 +298,11 @@ var DiscordBridge = class {
     if (this.isDm(channel)) return { place: "Direct call", roomName: this.name(channel.recipients?.[0]), guildId: null };
     return { place: "Group call", roomName: channel.name ?? "Group DM", guildId: null };
   }
-  rooms(watchlist = []) {
+  rooms(watchlist = [], hidden = []) {
     const friendIds = new Set(this.relationshipStore.getFriendIDs?.() ?? []);
-    const tracked = /* @__PURE__ */ new Set([...friendIds, ...watchlist]);
     const me = this.currentId();
+    const isHidden = (id) => id !== me && hidden.includes(id);
+    const tracked = new Set([...friendIds, ...watchlist].filter((id) => !isHidden(id)));
     const byChannel = /* @__PURE__ */ new Map();
     for (const states of Object.values(this.voiceStore.getAllVoiceStates?.() ?? {})) {
       for (const state of Object.values(states ?? {})) {
@@ -314,15 +316,21 @@ var DiscordBridge = class {
       const channel = this.channel(channelId);
       if (!channel) continue;
       const info = this.roomDescription(channel);
-      result.push({ channelId, ...info, blocker: this.joinBlocker(channel), members: members.map((state) => ({
-        id: state.userId,
-        name: this.name(state.userId, info.guildId),
-        friend: friendIds.has(state.userId),
-        watched: watchlist.includes(state.userId),
-        mute: !!(state.mute || state.selfMute),
-        deaf: !!(state.deaf || state.selfDeaf),
-        stream: !!state.selfStream
-      })) });
+      result.push({
+        channelId,
+        ...info,
+        blocker: this.joinBlocker(channel),
+        hiddenCount: members.filter((state) => isHidden(state.userId)).length,
+        members: members.filter((state) => !isHidden(state.userId)).map((state) => ({
+          id: state.userId,
+          name: this.name(state.userId, info.guildId),
+          friend: friendIds.has(state.userId),
+          watched: watchlist.includes(state.userId),
+          mute: !!(state.mute || state.selfMute),
+          deaf: !!(state.deaf || state.selfDeaf),
+          stream: !!state.selfStream
+        }))
+      });
     }
     return result.sort((a, b) => a.place.localeCompare(b.place) || a.roomName.localeCompare(b.roomName));
   }
@@ -726,6 +734,7 @@ function installUserMenu(api, view) {
           listItem(view, id, "notifyOnline", "Notify when online", "Stop online alerts"),
           listItem(view, id, "notifyVoice", "Notify when in voice", "Stop voice alerts"),
           listItem(view, id, "blacklist", "Add to Run Away", "Remove from Run Away"),
+          listItem(view, id, "hidden", "Hide from In Voice", "Show in In Voice"),
           { type: "submenu", id: "fivbd-guards", label: "Personal Guards", items: guardItems }
         ]
       }]);
@@ -1823,7 +1832,7 @@ function renderVoiceTab(parent, view) {
   function update() {
     results.replaceChildren();
     const query = input.value.trim().toLowerCase();
-    const rooms = view.bridge.rooms(view.data.value.watchlist).filter((room) => !query || `${room.place} ${room.roomName} ${room.members.map((member) => member.name).join(" ")}`.toLowerCase().includes(query));
+    const rooms = view.bridge.rooms(view.data.value.watchlist, view.data.value.hidden).filter((room) => !query || `${room.place} ${room.roomName} ${room.members.map((member) => member.name).join(" ")}`.toLowerCase().includes(query));
     if (!rooms.length) {
       results.append(paragraph(query ? "Nothing matches your search." : "No friends in visible voice rooms.", "fivbd-empty"));
       return;
@@ -1844,6 +1853,7 @@ function renderVoiceTab(parent, view) {
         );
         card.append(row);
       }
+      if (room.hiddenCount) card.append(paragraph(`\u{1F648} ${room.hiddenCount} hidden ${room.hiddenCount === 1 ? "person" : "people"}`, "fivbd-muted"));
       if (view.bridge.voiceChannel(view.bridge.currentId()) !== room.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
         const join = button(room.blocker ?? "Join voice", () => {
           try {
@@ -1861,6 +1871,26 @@ function renderVoiceTab(parent, view) {
   input.addEventListener("input", update);
   add(parent, input, results);
   update();
+  renderHidden(parent, view);
+}
+function renderHidden(parent, view) {
+  const ids = view.data.value.hidden;
+  if (!ids.length) return;
+  add(
+    parent,
+    element("h3", "", `\u{1F648} Hidden (${ids.length})`),
+    paragraph("These people don't show up in In Voice. Show someone again here, or right-click them \u2192 Show in In Voice.", "fivbd-muted")
+  );
+  const list = element("div", "fivbd-grid");
+  for (const id of ids) {
+    const row = element("div", "fivbd-person");
+    add(row, element("span", "", view.bridge.name(id)), button("Show", () => {
+      view.data.toggleList("hidden", id);
+      view.render();
+    }));
+    list.append(row);
+  }
+  parent.append(list);
 }
 
 // src/view.js

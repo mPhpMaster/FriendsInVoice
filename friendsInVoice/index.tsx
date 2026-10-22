@@ -96,6 +96,10 @@ export const settings = definePluginSettings({
         type: OptionType.CUSTOM,
         default: [] as string[],
     },
+    hidden: {
+        type: OptionType.CUSTOM,
+        default: [] as string[],
+    },
     personalGuards: { type: OptionType.CUSTOM, default: [] as GuardGrant[] },
     knownGuardGrants: { type: OptionType.CUSTOM, default: [] as GuardGrant[] },
     pendingGuardInvites: { type: OptionType.CUSTOM, default: [] as GuardInvite[] },
@@ -294,13 +298,14 @@ const HEADSET_PATH = "M12 2a10 10 0 0 0-10 10v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6
 function ServerListButton() {
     const open = usePageOpen();
 
+    const { hidden } = settings.use(["hidden"]);
     const count = useStateFromStores([VoiceStateStore, RelationshipStore], () => {
         let n = 0;
         for (const id of RelationshipStore.getFriendIDs()) {
-            if (VoiceStateStore.getVoiceStateForUser(id)?.channelId) n++;
+            if (!hidden.includes(id) && VoiceStateStore.getVoiceStateForUser(id)?.channelId) n++;
         }
         return n;
-    });
+    }, [hidden]);
 
     return (
         <>

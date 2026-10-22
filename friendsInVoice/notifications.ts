@@ -18,7 +18,7 @@ const VERSION = "1.12.0";
 const REPO = "mPhpMaster/FriendsInVoice";// ---------- lists ----------
 const UpdateNative = VencordNative.pluginHelpers.FriendsInVoice as PluginNative<typeof import("./native")>;
 
-export type ListKey = "watchlist" | "notifyOnline" | "blacklist" | "notifyVoice";
+export type ListKey = "watchlist" | "notifyOnline" | "blacklist" | "notifyVoice" | "hidden";
 
 export function inList(key: ListKey, id: string) {
     return settings.store[key].includes(id);

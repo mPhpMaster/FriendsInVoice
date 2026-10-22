@@ -1,8 +1,8 @@
-export const LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice"];
+export const LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "hidden"];
 export const ACTIONS = ["mute", "deafen", "disconnect"];
 
 const DEFAULTS = {
-    watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [],
+    watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [], hidden: [],
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
     anthropicApiKey: "", aiModel: "claude-opus-5-5", checkForUpdates: true,
     personalGuards: [], knownGuardGrants: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []

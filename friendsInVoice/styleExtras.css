@@ -241,3 +241,8 @@
 .vc-fiv-guard-modal-option { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 15px; color: var(--text-default); }
 .vc-fiv-guard-modal-option input { width: 18px; height: 18px; accent-color: var(--brand-500); }
 .vc-fiv-guard-modal-note { margin: 6px 0 0; color: var(--text-secondary, #b5bac1); font-size: 13px; }
+.vc-fiv-hidden-note { margin: 8px 0 0 46px; font-size: 12px; }
+.vc-fiv-hidden-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-subtle, rgb(255 255 255 / 8%)); }
+.vc-fiv-chip-hidden { background: var(--background-mod-normal, rgb(255 255 255 / 6%)); color: var(--text-secondary, #b5bac1); font-weight: 500; }
+.vc-fiv-chip-show { margin-left: 2px; padding: 0 2px; cursor: pointer; color: var(--text-muted, #949ba4); }
+.vc-fiv-chip-show:hover { color: #f23f43; }

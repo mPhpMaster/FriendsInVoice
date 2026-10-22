@@ -24,6 +24,7 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
     const notifyVoice = inList("notifyVoice", user.id);
     const notify = inList("notifyOnline", user.id);
     const blocked = inList("blacklist", user.id);
+    const hidden = inList("hidden", user.id);
     const known = settings.store.knownGuardGrants.find(grant => grant.userId === user.id);
     const actions = known && hasGuardKey(settings.store, user.id) && sharesVoice(user.id)
         ? GUARD_ACTIONS.filter(action => known.actions.includes(action)) : [];
@@ -40,6 +41,8 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
             action={() => toggleInList("notifyVoice", user.id)} />
         <Menu.MenuItem id="vc-fiv-notify" label={notify ? "Stop notifying me when online" : "Notify me when online"}
             action={() => toggleInList("notifyOnline", user.id)} />
+        <Menu.MenuItem id="vc-fiv-hide" label={hidden ? "Show in In voice" : "Hide from In voice"}
+            action={() => toggleInList("hidden", user.id)} />
         <Menu.MenuItem id="vc-fiv-blacklist" label={blocked ? "Remove from Run away" : "Add to Run away"}
             color={blocked ? undefined : "danger"} action={() => toggleInList("blacklist", user.id)} />
         <Menu.MenuItem id="vc-fiv-personal-guards" label={isGuardian ? "Personal Guard settings…" : "Make Personal Guard…"}
