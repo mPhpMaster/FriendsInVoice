@@ -246,3 +246,25 @@
 .vc-fiv-chip-hidden { background: var(--background-mod-normal, rgb(255 255 255 / 6%)); color: var(--text-secondary, #b5bac1); font-weight: 500; }
 .vc-fiv-chip-show { margin-left: 2px; padding: 0 2px; cursor: pointer; color: var(--text-muted, #949ba4); }
 .vc-fiv-chip-show:hover { color: #f23f43; }
+
+/* ---------- log ---------- */
+.vc-fiv-log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+.vc-fiv-log-toolbar .vc-fiv-search { flex: 1 1 280px; max-width: 480px; margin: 0; }
+.vc-fiv-log-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.vc-fiv-log-filter { padding: 4px 10px; border-radius: 12px; cursor: pointer; font-size: 13px; background: var(--background-mod-normal, rgb(255 255 255 / 6%)); color: var(--text-muted, #949ba4); }
+.vc-fiv-log-filter:hover { color: var(--text-default, #dbdee1); }
+.vc-fiv-log-filter-active { background: var(--brand-500, #5865f2); color: #fff; }
+.vc-fiv-log-clear { margin-left: 6px; font-size: 13px; }
+.vc-fiv-log-list { display: flex; flex-direction: column; border: 1px solid var(--border-subtle, rgb(255 255 255 / 6%)); border-radius: 8px; overflow: hidden; }
+.vc-fiv-log-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 12px; font-size: 14px; line-height: 1.5; }
+.vc-fiv-log-row + .vc-fiv-log-row { border-top: 1px solid var(--border-subtle, rgb(255 255 255 / 6%)); }
+.vc-fiv-log-row:hover { background: var(--background-mod-subtle, rgb(255 255 255 / 3%)); }
+.vc-fiv-log-myroom { box-shadow: inset 3px 0 0 #f0b232; }
+.vc-fiv-log-time { color: var(--text-muted, #949ba4); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 64px; }
+.vc-fiv-log-person, .vc-fiv-log-place { display: inline-flex; align-items: center; gap: 6px; }
+.vc-fiv-log-what { flex: 1 1 auto; min-width: 0; }
+.vc-fiv-log-room, .vc-fiv-log-place { font-weight: 600; color: var(--text-strong, #f2f3f5); border-radius: 4px; }
+.vc-fiv-log-room:hover, .vc-fiv-log-place:hover { text-decoration: underline; }
+.vc-fiv-log-guild-icon { width: 16px; height: 16px; border-radius: 4px; }
+.vc-fiv-log-hint { margin-top: 12px; font-size: 12px; }
+.vc-fiv-log-person.vc-fiv-clickable:hover b { text-decoration: underline; }

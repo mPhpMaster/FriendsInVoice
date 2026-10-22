@@ -46,6 +46,14 @@ Right-click a user → **Add to Run away** (or **Remove from Run away**). Every 
 
 Right-click a user → **Hide from In voice**. They stop showing up in the 🔊 In voice tab, they no longer bring a room into the list, and they don't count in the badge on the server-list button; a room you see for other friends just says "🙈 1 hidden person". To bring them back, right-click them → **Show in In voice**, or press ✕ next to their name in the 🙈 Hidden list at the bottom of the In voice tab. My list, alerts and Run away keep working for them as before.
 
+### 📜 Log
+
+A running list of everything that happens in voice in your servers: who **joined**, **left** or **moved** between rooms, with the time, the person, the room and the server. People coming into or leaving the room you're sitting in are tagged **YOUR ROOM**, even if they aren't your friends. Filter by Everything, Friends, My room or Me, or search by name.
+
+Everything in the log can be clicked: a **person** opens your DM with them (right-click for Discord's user menu), a **room** opens it (right-click for Discord's channel menu: join, mute, copy link…) and a **server** takes you to it (right-click for Discord's server menu). When the room or server isn't on screen in Discord's sidebar, right-click shows a short menu with the main actions instead.
+
+The log keeps the last 500 events in memory and starts empty each time Discord starts. People on your Hidden list aren't logged.
+
 ### 🛡️ Personal Guards
 
 Let a friend you trust mute, deafen, or disconnect **your** account while you're both in the same voice channel. No moderator permission is needed, and nothing is sent without you pressing Enter.

@@ -27,6 +27,8 @@ import type { GuardGrant, GuardInvite } from "./personalGuardsTypes";
 import { SmartReplies } from "./smartReplies";
 import { UserContextPatch } from "./userContextMenu";
 import { useVoiceData } from "./voiceContent";
+import { onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
+import { LogTab, useLog } from "./voiceLogTab";
 import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voiceTabs";
 
 export { inList, isOnline, toggleInList } from "./notifications";
@@ -156,7 +158,7 @@ function usePageOpen() {
 
 // ---------- page ----------
 
-type Tab = "voice" | "mine" | "alerts" | "runaway" | "guards";
+type Tab = "voice" | "mine" | "alerts" | "runaway" | "guards" | "log";
 
 function getNav() {
     return document.querySelector<HTMLElement>(`.${cl("server-button")}`)?.closest("nav") ?? null;
@@ -193,6 +195,7 @@ function FriendsInVoicePage() {
     usePageOpen(); // re-render when the focused person changes
     const focus = focusUserId;
     const data = useVoiceData(focus);
+    const log = useLog();
     const { notifyOnline, blacklist, notifyVoice } = settings.use(["notifyOnline", "blacklist", "notifyVoice"]);
     settings.use(["personalGuards", "knownGuardGrants", "guardPeerKeys", "pendingGuardInvites"]);
     const [tab, setTab] = useState<Tab>(requestedTab);
@@ -268,6 +271,9 @@ function FriendsInVoicePage() {
                     <div className={cl("tab", tab === "guards" && "tab-active")} onClick={() => setTab("guards")}>
                         🛡️ Personal Guards <span className={cl("count")}>{settings.store.personalGuards.filter(grant => grant.actions.length).length}</span>
                     </div>
+                    <div className={cl("tab", tab === "log" && "tab-active")} onClick={() => setTab("log")}>
+                        📜 Log <span className={cl("count")}>{log.length}</span>
+                    </div>
                 </div>
                 <div className={cl("page-sub")}>{friendsInVoice} friend{friendsInVoice === 1 ? "" : "s"} in voice</div>
                 <div className={cl("close")} onClick={() => setPageOpen(false)} title="Close (Esc)">✕</div>
@@ -279,6 +285,7 @@ function FriendsInVoicePage() {
                 {tab === "alerts" && <AlertsTab data={data} />}
                 {tab === "runaway" && <RunAwayTab data={data} />}
                 {tab === "guards" && <PersonalGuardsTab store={settings.store} refresh={refreshGuards} />}
+                {tab === "log" && <LogTab />}
                 <div className={cl("note")}>
                     Discord only shares voice activity and online status for servers you're also in, so people in servers you haven't joined won't show up.
                     {" · "}v{VERSION}{" · "}
@@ -382,7 +389,7 @@ export function selfMenuItems() {
 
 export default definePlugin({
     name: "FriendsInVoice",
-    description: "A page showing which voice rooms your friends are in and one-click join, plus My list, voice/online alerts and a Run away list",
+    description: "A page showing which voice rooms your friends are in and one-click join, plus My list, voice/online alerts, a Run away list and a Log of who joined, left or moved",
     authors: [{ name: "mPhpMaster", id: 0n }],
     dependencies: ["ServerListAPI", "UserSettingsAPI", "MessageAccessoriesAPI"],
     settings,
@@ -427,8 +434,9 @@ export default definePlugin({
         CONNECTION_OPEN() {
             startQuietPeriod();
         },
-        VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; }[]; }) {
+        VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; oldChannelId?: string | null; }[]; }) {
             onVoiceStateUpdates(voiceStates);
+            onVoiceLogUpdates(voiceStates);
         },
         MESSAGE_CREATE({ message }: { message: { id: string; channel_id: string; content: string; author: { id: string; bot?: boolean; }; }; }) {
             handleGuardMessage(settings.store, message);
@@ -470,6 +478,7 @@ export default definePlugin({
         startQuietPeriod();
         seedStatuses();
         seedVoiceChannels();
+        seedVoiceLog();
         PresenceStore.addChangeListener(onPresenceChange);
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
