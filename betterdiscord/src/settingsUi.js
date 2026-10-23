@@ -1,10 +1,12 @@
 import { add, button, element, heading, paragraph } from "./dom.js";
+import { openLink, REPO_URL } from "./whatsNew.js";
 
 const SWITCHES = [
     ["notifyOnce", "Remove an online alert after it fires once"],
     ["smartReplies", "Show built-in smart replies in the dashboard"],
     ["smartRepliesAi", "Enable the optional Claude reply button"],
-    ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"]
+    ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
+    ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"]
 ];
 
 export function settingsPanel(view) {
@@ -36,6 +38,6 @@ export function settingsPanel(view) {
         add(label, element("span", "", title), input);
         root.append(label);
     }
-    root.append(button("Check for updates", () => void view.alerts.checkUpdate(true)));
+    root.append(button("Check for updates", () => void view.alerts.checkUpdate(true)), button("Open GitHub", () => openLink(REPO_URL)));
     return root;
 }

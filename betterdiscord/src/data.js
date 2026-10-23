@@ -8,7 +8,7 @@ export const ACTIONS = ["mute", "deafen", "disconnect"];
 const DEFAULTS = {
     watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [], hidden: [],
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
-    anthropicApiKey: "", aiModel: "claude-opus-5-5", checkForUpdates: true,
+    anthropicApiKey: "", aiModel: "claude-opus-5-5", checkForUpdates: true, showWhatsNew: true,
     personalGuards: [], knownGuardGrants: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
 };
 export const isId = value => typeof value === "string" && /^\d{17,20}$/.test(value);
@@ -18,7 +18,7 @@ export function normalizeData(raw) {
     const source = raw && typeof raw === "object" ? raw : {};
     const data = { ...DEFAULTS };
     for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-    for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates"])
+    for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew"])
         if (typeof source[key] === "boolean") data[key] = source[key];
     for (const key of ["anthropicApiKey", "aiModel"])
         if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
