@@ -6,7 +6,7 @@
 
 import { copyToClipboard } from "@utils/clipboard";
 import { classNameFactory } from "@utils/css";
-import { ChannelStore, ContextMenuApi, GuildStore, Menu, NavigationRouter, React, useEffect, useReducer, useState } from "@webpack/common";
+import { ChannelStore, ContextMenuApi, GuildStore, Menu, NavigationRouter, React, SearchableSelect, useEffect, useReducer, useState } from "@webpack/common";
 
 import { setPageOpen, settings } from ".";
 import { Avatar, joinRoom, openRoomChannel, personProps, useUser } from "./voiceContent";
@@ -176,10 +176,17 @@ const parseLocal = (value: string) => value ? new Date(value).getTime() : NaN;
 
 function Picker({ value, onChange, all, options }: { value: string; onChange(v: string): void; all: string; options: [string, string][]; }) {
     return (
-        <select className={cl("log-select")} value={value} onChange={e => onChange(e.currentTarget.value)}>
-            <option value="">{all}</option>
-            {options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-        </select>
+        // Discord's own dropdown, so it matches the theme and you can type to find someone
+        <div className={cl("log-select")}>
+            <SearchableSelect
+                options={[{ value: "", label: all }, ...options.map(([id, label]) => ({ value: id, label }))]}
+                value={value}
+                placeholder={all}
+                maxVisibleItems={8}
+                closeOnSelect={true}
+                onChange={v => onChange(v ?? "")}
+            />
+        </div>
     );
 }
 
