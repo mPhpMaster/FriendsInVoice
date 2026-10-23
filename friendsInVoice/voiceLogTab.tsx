@@ -169,18 +169,54 @@ function matches(entry: LogEntry, filter: Filter, q: string, watchlist: string[]
         .some(text => text?.toLowerCase().includes(q));
 }
 
+const serversOf = (entry: LogEntry) => [entry.from, entry.to].filter((r): r is LogRoom => !!r?.guildId);
+
+// "2026-10-23T14:30" from <input type="datetime-local"> is local time, which is what Date parses it as
+const parseLocal = (value: string) => value ? new Date(value).getTime() : NaN;
+
+function Picker({ value, onChange, all, options }: { value: string; onChange(v: string): void; all: string; options: [string, string][]; }) {
+    return (
+        <select className={cl("log-select")} value={value} onChange={e => onChange(e.currentTarget.value)}>
+            <option value="">{all}</option>
+            {options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </select>
+    );
+}
+
 export function LogTab() {
     const log = useLog();
     const { watchlist } = settings.use(["watchlist"]);
     const [filter, setFilter] = useState<Filter>("friends");
     const [query, setQuery] = useState("");
     const [page, setPage] = useState(0);
+    const [server, setServer] = useState("");
+    const [person, setPerson] = useState("");
+    const [since, setSince] = useState("");
+    const [until, setUntil] = useState("");
     const q = query.trim().toLowerCase();
-    const shown = log.filter(e => matches(e, filter, q, watchlist));
+    const inFilter = log.filter(e => matches(e, filter, q, watchlist));
+
+    // only offer servers and people that appear under the current filter
+    const servers = new Map<string, string>(), people = new Map<string, string>();
+    for (const e of inFilter) {
+        for (const r of serversOf(e)) servers.set(r.guildId!, r.place);
+        if (!e.isMe) people.set(e.userId, e.userName);
+    }
+    const byName = (a: [string, string], b: [string, string]) => a[1].localeCompare(b[1]);
+
+    // a pick that isn't offered under the current filter doesn't apply
+    const pickedServer = servers.has(server) ? server : "";
+    const pickedPerson = people.has(person) ? person : "";
+    const from = parseLocal(since), to = parseLocal(until);
+    const shown = inFilter.filter(e =>
+        (!pickedServer || serversOf(e).some(r => r.guildId === pickedServer))
+        && (!pickedPerson || e.userId === pickedPerson)
+        && !(e.time < from) && !(e.time > to));
+    const narrowed = server || person || since || until;
     const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
     const current = Math.min(page, pages - 1);
 
-    useEffect(() => setPage(0), [filter, q]);
+    useEffect(() => setPage(0), [filter, q, server, person, since, until]);
 
     return (
         <>
@@ -197,6 +233,13 @@ export function LogTab() {
                     ))}
                     {log.length > 0 && <span className={cl("link", "log-clear")} onClick={clearLog}>Clear</span>}
                 </div>
+            </div>
+            <div className={cl("log-toolbar")}>
+                <Picker value={pickedServer} onChange={setServer} all="All servers" options={[...servers].sort(byName)} />
+                <Picker value={pickedPerson} onChange={setPerson} all="All people" options={[...people].sort(byName)} />
+                <label className={cl("log-date")}>From <input type="datetime-local" value={since} onChange={e => setSince(e.currentTarget.value)} /></label>
+                <label className={cl("log-date")}>To <input type="datetime-local" value={until} onChange={e => setUntil(e.currentTarget.value)} /></label>
+                {narrowed && <span className={cl("link")} onClick={() => { setServer(""); setPerson(""); setSince(""); setUntil(""); }}>Reset</span>}
             </div>
             {shown.length === 0
                 ? <div className={cl("empty")}>

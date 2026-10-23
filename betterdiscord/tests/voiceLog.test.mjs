@@ -107,3 +107,21 @@ test("friend requests, new friends, lost friends and lost servers are logged", (
     assert.deepEqual(log.entries.map(entry => entry.kind), ["server-removed", "friend-removed", "friend-added", "friend-request"]);
     assert.equal(log.entries[0].from.place, "Guild");
 });
+
+test("the log narrows by server, person and date range", async () => {
+    const { narrowLog } = await import("../src/viewLog.js");
+    const other = "999999999999999999";
+    const at = text => new Date(text).getTime();
+    const room = (guildId, place) => ({ id: `${guildId}1`, guildId, roomName: "Room", place });
+    const entries = [
+        { key: 3, time: at("2026-10-23T12:00"), kind: "join", userId: friend, userName: "Friend", isFriend: true, from: null, to: room(other, "Other") },
+        { key: 2, time: at("2026-10-22T20:00"), kind: "leave", userId: friend, userName: "Friend", isFriend: true, from: room(guild, "Guild"), to: null },
+        { key: 1, time: at("2026-10-21T09:00"), kind: "join", userId: watched, userName: "Watched", isFriend: true, from: null, to: room(guild, "Guild") }
+    ];
+    const keys = options => narrowLog(entries, { filter: "friends", ...options }).shown.map(entry => entry.key);
+    assert.deepEqual(keys({ server: guild }), [2, 1]);
+    assert.deepEqual(keys({ person: watched }), [1]);
+    assert.deepEqual(keys({ since: "2026-10-22T00:00", until: "2026-10-22T23:59" }), [2]);
+    assert.deepEqual(keys({ server: "not-offered" }), [3, 2, 1]);
+    assert.deepEqual(narrowLog(entries, { filter: "friends" }).servers, [[guild, "Guild"], [other, "Other"]]);
+});

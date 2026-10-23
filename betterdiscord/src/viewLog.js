@@ -109,6 +109,49 @@ function matches(entry, filter, query, watchlist) {
         .some(text => text?.toLowerCase().includes(query));
 }
 
+const serversOf = entry => [entry.from, entry.to].filter(room => room?.guildId);
+// "2026-10-23T14:30" from <input type="datetime-local"> is local time, which is what Date parses it as
+const parseLocal = value => value ? new Date(value).getTime() : NaN;
+const byName = (a, b) => a[1].localeCompare(b[1]);
+
+/** The entries left after the filter chip, search, server, person and date range, plus the servers and people to offer */
+export function narrowLog(entries, { filter, query = "", watchlist = [], server = "", person = "", since = "", until = "" }) {
+    const inFilter = entries.filter(entry => matches(entry, filter, query, watchlist));
+    // only offer servers and people that appear under the current filter
+    const servers = new Map(), people = new Map();
+    for (const entry of inFilter) {
+        for (const room of serversOf(entry)) servers.set(room.guildId, room.place);
+        if (!entry.isMe) people.set(entry.userId, entry.userName);
+    }
+    // a pick that isn't offered under the current filter doesn't apply
+    const pickedServer = servers.has(server) ? server : "", pickedPerson = people.has(person) ? person : "";
+    const from = parseLocal(since), to = parseLocal(until);
+    const shown = inFilter.filter(entry =>
+        (!pickedServer || serversOf(entry).some(room => room.guildId === pickedServer)) &&
+        (!pickedPerson || entry.userId === pickedPerson) && !(entry.time < from) && !(entry.time > to));
+    return { shown, servers: [...servers].sort(byName), people: [...people].sort(byName), pickedServer, pickedPerson };
+}
+
+function picker(all, onChange) {
+    const select = element("select", "fivbd-log-select");
+    select.addEventListener("change", () => onChange(select.value));
+    select.fill = (options, value) => {
+        select.replaceChildren(new Option(all, ""), ...options.map(([id, label]) => new Option(label, id)));
+        select.value = value;
+    };
+    return select;
+}
+
+function dateInput(label, key, view, update) {
+    const wrap = element("label", "fivbd-log-date", `${label} `);
+    const input = element("input");
+    input.type = "datetime-local";
+    input.value = view[key] ?? "";
+    input.addEventListener("change", () => { view[key] = input.value; view.logPage = 0; update(); });
+    wrap.append(input);
+    return wrap;
+}
+
 export function renderLogTab(parent, view) {
     const log = view.voiceLog;
     if (!FILTERS.some(([id]) => id === view.logFilter)) view.logFilter = "friends";
@@ -123,9 +166,19 @@ export function renderLogTab(parent, view) {
     if (log.entries.length) filters.append(button("Clear", () => { log.clear(); view.logPage = 0; view.render(); }));
     const list = element("div", "fivbd-log");
     const pager = element("div", "fivbd-actions");
+    const pick = key => value => { view[key] = value; view.logPage = 0; update(); };
+    const serverPicker = picker("All servers", pick("logServer")), personPicker = picker("All people", pick("logPerson"));
+    const narrow = element("div", "fivbd-actions");
+    add(narrow, serverPicker, personPicker, dateInput("From", "logSince", view, update), dateInput("To", "logUntil", view, update),
+        button("Reset", () => { view.logServer = view.logPerson = view.logSince = view.logUntil = ""; view.logPage = 0; view.render(); }));
     function update() {
         const query = input.value.trim().toLowerCase();
-        const shown = log.entries.filter(entry => matches(entry, view.logFilter, query, view.data.value.watchlist));
+        const { shown, servers, people, pickedServer, pickedPerson } = narrowLog(log.entries, {
+            filter: view.logFilter, query, watchlist: view.data.value.watchlist,
+            server: view.logServer, person: view.logPerson, since: view.logSince, until: view.logUntil
+        });
+        serverPicker.fill(servers, pickedServer);
+        personPicker.fill(people, pickedPerson);
         const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
         view.logPage = Math.min(view.logPage, pages - 1);
         list.replaceChildren();
@@ -155,6 +208,6 @@ export function renderLogTab(parent, view) {
         }
     }
     input.addEventListener("input", () => { view.logPage = 0; update(); });
-    add(parent, input, filters, list, pager, paragraph(`Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log is saved on this computer and keeps the last ${MAX_ENTRIES.toLocaleString()} events.`, "fivbd-muted"));
+    add(parent, input, filters, narrow, list, pager, paragraph(`Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log is saved on this computer and keeps the last ${MAX_ENTRIES.toLocaleString()} events.`, "fivbd-muted"));
     update();
 }
