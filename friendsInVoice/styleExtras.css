@@ -270,3 +270,6 @@
 .vc-fiv-log-person.vc-fiv-clickable:hover b { text-decoration: underline; }
 .vc-fiv-log-pages { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; font-size: 13px; }
 .vc-fiv-log-page-off { opacity: .4; pointer-events: none; }
+.vc-fiv-log-select, .vc-fiv-log-date input { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-subtle, rgb(255 255 255 / 8%)); background: var(--input-background, var(--background-mod-normal, #1e1f22)); color: var(--text-default, #dbdee1); font-size: 13px; color-scheme: dark; }
+.vc-fiv-log-select { max-width: 220px; }
+.vc-fiv-log-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted, #949ba4); }
