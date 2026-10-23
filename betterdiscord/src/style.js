@@ -19,7 +19,7 @@ export const STYLE = `
 .fivbd-log-myroom{box-shadow:inset 3px 0 0 #f0b232}.fivbd-log-what{flex:1 1 auto;min-width:0}
 .fivbd-log-link{font-weight:600;cursor:pointer}.fivbd-log-link:hover{text-decoration:underline}.fivbd-log-place{font-weight:600}
 .fivbd-log-select,.fivbd-log-date input{padding:5px 8px;border-radius:7px;border:1px solid var(--border-subtle);background:var(--input-background);color:var(--text-normal);color-scheme:dark}
-.fivbd-log-select{max-width:220px}.fivbd-log-date{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
+.fivbd-log-select{max-width:220px;cursor:pointer}.fivbd-log-select option{background:var(--background-floating,#111214);color:var(--text-normal,#dbdee1)}.fivbd-log-date{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
 .fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
