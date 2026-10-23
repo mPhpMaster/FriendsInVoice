@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.13.0
+ * @version 1.14.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -100,8 +100,41 @@ var AlertService = class {
   }
 };
 
+// src/accountStore.js
+var DB_NAME = "FriendsInVoice";
+var STORES = ["accounts", "voiceLogs"];
+var dbPromise = null;
+function openDb() {
+  return dbPromise ??= new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      for (const name of STORES) request.result.createObjectStore(name);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  }).catch((error) => {
+    dbPromise = null;
+    throw error;
+  });
+}
+function run(storeName, mode, action) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, mode);
+    const request = action(transaction.objectStore(storeName));
+    transaction.oncomplete = () => resolve(request.result);
+    transaction.onerror = () => reject(transaction.error);
+  }));
+}
+function accountStore(storeName) {
+  return {
+    get: (id) => run(storeName, "readonly", (store) => store.get(id)),
+    put: (id, value) => run(storeName, "readwrite", (store) => store.put(value, id))
+  };
+}
+
 // src/data.js
 var LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "hidden"];
+var ACCOUNT_KEYS = [...LISTS, "personalGuards", "knownGuardGrants", "guardPeerKeys", "guardBlocks", "guardReplay"];
 var ACTIONS = ["mute", "deafen", "disconnect"];
 var DEFAULTS = {
   watchlist: [],
@@ -138,13 +171,48 @@ function normalizeData(raw) {
   data.guardReplay = Array.isArray(source.guardReplay) ? source.guardReplay.filter((item) => typeof item?.nonce === "string" && Number.isSafeInteger(item.createdAt) && Date.now() - item.createdAt < 3e5).map((item) => ({ nonce: item.nonce, createdAt: item.createdAt })) : [];
   return data;
 }
+var pick = (source, keys) => Object.fromEntries(keys.map((key) => [key, source[key]]));
 var DataStore = class {
-  constructor(api) {
+  constructor(api, accounts = accountStore("accounts")) {
     this.api = api;
-    this.value = normalizeData(api.Data.load("settings"));
+    this.accounts = accounts;
+    const raw = api.Data.load("settings");
+    this.value = normalizeData(raw);
+    this.owner = isId(raw?.accountOwner) ? raw.accountOwner : "";
+    this.accountId = null;
+    this.loading = null;
+    this.onAccount = null;
+    if (this.owner) this.clearAccount();
+  }
+  clearAccount() {
+    Object.assign(this.value, pick(normalizeData({}), ACCOUNT_KEYS));
   }
   save() {
-    this.api.Data.save("settings", this.value);
+    const shared = pick(this.value, Object.keys(this.value).filter((key) => !ACCOUNT_KEYS.includes(key)));
+    this.api.Data.save("settings", this.owner ? { ...shared, accountOwner: this.owner } : this.value);
+    if (this.accountId) void this.accounts.put(this.accountId, pick(this.value, ACCOUNT_KEYS)).catch(() => {
+    });
+  }
+  /** load the lists of the account that's logged in; on start and whenever Discord connects */
+  async useAccount(id) {
+    if (!isId(id) || id === this.accountId || id === this.loading) return;
+    this.accountId = null;
+    this.loading = id;
+    const inherits = !this.owner;
+    if (!inherits) this.clearAccount();
+    const saved = await this.accounts.get(id).catch(() => void 0);
+    if (this.loading !== id) return;
+    this.loading = null;
+    if (saved) Object.assign(this.value, pick(normalizeData(saved), ACCOUNT_KEYS));
+    else if (inherits) this.owner = id;
+    else this.clearAccount();
+    this.accountId = id;
+    this.save();
+    this.onAccount?.(id);
+  }
+  /** logged out: stop saving until the next account loads */
+  leave() {
+    this.accountId = this.loading = null;
   }
   listHas(key, id) {
     return LISTS.includes(key) && this.value[key].includes(id);
@@ -464,7 +532,7 @@ function parseGuardPayload(value) {
 // ../friendsInVoice/personalGuardsCrypto.ts
 var encoder = new TextEncoder();
 var decoder = new TextDecoder();
-var DB_NAME = "FriendsInVoiceGuardKeys";
+var DB_NAME2 = "FriendsInVoiceGuardKeys";
 var keyPromise;
 function toBase64Url2(bytes) {
   let binary = "";
@@ -482,7 +550,7 @@ function buffer(bytes) {
 }
 function openKeyDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME2, 1);
     request.onupgradeneeded = () => request.result.createObjectStore("keys");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -1439,7 +1507,7 @@ function repliesFor(replies, lang, dialect) {
   if (lang === "en") return replies.en;
   return dialect !== "ar" && replies[dialect] || replies.ar;
 }
-function pick(list, count, seed) {
+function pick2(list, count, seed) {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
   const arr = [...list];
@@ -1454,13 +1522,13 @@ function ruleReplies(content, hasAttachments, seed = "") {
   const text = normalize(content);
   const lang = isArabic(content) ? "ar" : "en";
   const dialect = lang === "ar" ? detectDialect(text) : "ar";
-  if (!text) return hasAttachments ? pick(lang === "ar" ? ["\u0648\u0635\u0644\u062A\u0646\u064A \u{1F440}", "\u0648\u0634 \u0641\u064A\u0647\u0627\u061F", "\u0634\u0643\u0631\u0627\u064B \u0639\u0644\u0649 \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629", "\u0628\u0634\u0648\u0641\u0647\u0627"] : ["Got it \u{1F440}", "What's in it?", "Thanks for sharing", "I'll take a look"], 3, seed) : pick(["\u2764\uFE0F", "\u{1F44D}", "\u{1F440}", "\u{1F90D}"], 3, seed);
+  if (!text) return hasAttachments ? pick2(lang === "ar" ? ["\u0648\u0635\u0644\u062A\u0646\u064A \u{1F440}", "\u0648\u0634 \u0641\u064A\u0647\u0627\u061F", "\u0634\u0643\u0631\u0627\u064B \u0639\u0644\u0649 \u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0629", "\u0628\u0634\u0648\u0641\u0647\u0627"] : ["Got it \u{1F440}", "What's in it?", "Thanks for sharing", "I'll take a look"], 3, seed) : pick2(["\u2764\uFE0F", "\u{1F44D}", "\u{1F440}", "\u{1F90D}"], 3, seed);
   const condolence = RULES[1];
   const match = (rule2) => rule2[lang]?.test(text) ?? false;
   const question = RULES.find((candidate) => candidate.generic && match(candidate));
   const rule = match(condolence) ? condolence : QUESTION_RULES.find(match) ?? question ?? RULES.find((candidate) => !candidate.generic && match(candidate));
   const choices = repliesFor(rule?.replies ?? FALLBACK, lang, dialect);
-  return pick([...new Set(choices)], Math.min(4, choices.length), seed || text);
+  return pick2([...new Set(choices)], Math.min(4, choices.length), seed || text);
 }
 
 // src/replies.js
@@ -1799,16 +1867,18 @@ var MAX_ENTRIES = 5e3;
 var ACCOUNT_KINDS = ["friend-request", "friend-added", "friend-removed", "server-removed"];
 var FRIEND = 1;
 var INCOMING = 3;
-var STORE_KEY = "voiceLog";
+var LEGACY_KEY = "voiceLog";
+var valid = (saved) => Array.isArray(saved) ? saved.filter((entry) => entry?.userId && (entry.from || entry.to)) : [];
 var VoiceLog = class {
-  constructor(bridge, data, api) {
+  constructor(bridge, data, api, logs = accountStore("voiceLogs")) {
     this.bridge = bridge;
     this.data = data;
     this.api = api;
-    const saved = api?.Data?.load?.(STORE_KEY);
-    this.entries = Array.isArray(saved) ? saved.filter((entry) => entry?.userId && (entry.from || entry.to)).slice(0, MAX_ENTRIES) : [];
+    this.logs = logs;
+    this.accountId = null;
+    this.entries = [];
     this.lastChannel = /* @__PURE__ */ new Map();
-    this.nextKey = Math.max(0, ...this.entries.map((entry) => (entry.key ?? 0) + 1));
+    this.nextKey = 0;
     this.quietUntil = Date.now() + 15e3;
     this.onChange = null;
     this.lastRelationship = /* @__PURE__ */ new Map();
@@ -1847,8 +1917,27 @@ var VoiceLog = class {
   flush() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    try {
-      this.api?.Data?.save?.(STORE_KEY, this.entries);
+    if (this.accountId) void this.logs.put(this.accountId, this.entries).catch(() => {
+    });
+  }
+  /** show the log of the account that's logged in, keeping the previous account's */
+  async useAccount(id) {
+    if (!id || id === this.accountId) return;
+    if (this.saveTimer) this.flush();
+    if (this.accountId) this.entries = [];
+    this.accountId = id;
+    this.onChange?.();
+    let saved = await this.logs.get(id).catch(() => void 0);
+    const legacy = saved === void 0 && this.api?.Data?.load?.(LEGACY_KEY);
+    if (legacy) saved = legacy;
+    if (this.accountId !== id) return;
+    this.entries = [...this.entries, ...valid(saved)].slice(0, MAX_ENTRIES);
+    this.nextKey = Math.max(this.nextKey, ...this.entries.map((entry) => (entry.key ?? 0) + 1));
+    this.onChange?.();
+    if (!legacy && !this.entries.length) return;
+    this.flush();
+    if (legacy) try {
+      this.api.Data.delete?.(LEGACY_KEY);
     } catch {
     }
   }
@@ -1960,10 +2049,10 @@ function rightClick(node, handler) {
 function copy(text) {
   void navigator.clipboard?.writeText(text);
 }
-function guarded(view, run) {
+function guarded(view, run2) {
   return () => {
     try {
-      run();
+      run2();
       view.close();
     } catch (error) {
       view.error(error);
@@ -2099,12 +2188,12 @@ function renderLogTab(parent, view) {
   }));
   const list = element("div", "fivbd-log");
   const pager = element("div", "fivbd-actions");
-  const pick2 = (key) => (value) => {
+  const pick3 = (key) => (value) => {
     view[key] = value;
     view.logPage = 0;
     update();
   };
-  const serverPicker = picker("All servers", pick2("logServer")), personPicker = picker("All people", pick2("logPerson"));
+  const serverPicker = picker("All servers", pick3("logServer")), personPicker = picker("All people", pick3("logPerson"));
   const narrow = element("div", "fivbd-actions");
   add(
     narrow,
@@ -2408,9 +2497,20 @@ module.exports = class FriendsInVoice {
       this.view.start();
       this.unsubscribers.push(installUserMenu(this.api, this.view));
       const onMessage = (event) => void this.guards.onMessage(event?.message).catch((error) => this.api.Logger.error("Guard message failed", error));
+      const loadAccount = () => {
+        const id = this.bridge.currentId();
+        void this.data.useAccount(id);
+        void this.voiceLog.useAccount(id);
+      };
+      this.data.onAccount = () => this.view.refresh();
       const onConnect = () => {
         this.alerts.reconnect();
         this.voiceLog.reconnect();
+        loadAccount();
+      };
+      const onLogout = () => {
+        this.data.leave();
+        this.voiceLog.flush();
       };
       const onVoice = (event) => this.voiceLog.onUpdates(event?.voiceStates);
       const logEvents = {
@@ -2424,12 +2524,15 @@ module.exports = class FriendsInVoice {
       this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("MESSAGE_CREATE", onMessage));
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
+      this.bridge.dispatcher.subscribe("LOGOUT", onLogout);
+      this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("LOGOUT", onLogout));
       this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("VOICE_STATE_UPDATES", onVoice));
       for (const [name, handler] of Object.entries(logEvents)) {
         this.bridge.dispatcher.subscribe(name, handler);
         this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe(name, handler));
       }
+      loadAccount();
       this.voiceLog.seed();
       this.alerts.seed();
       this.pollTimer = setInterval(() => {

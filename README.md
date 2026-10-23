@@ -52,7 +52,7 @@ A history of what happens around you: when a **friend**, someone on **My list**,
 
 Everything in the log can be clicked: a **person** opens your DM with them (right-click for Discord's user menu), a **room** opens it (right-click for Discord's channel menu: join, mute, copy link…) and a **server** takes you to it (right-click for Discord's server menu). When the room or server isn't on screen in Discord's sidebar, right-click shows a short menu with the main actions instead.
 
-The log is saved on your computer, keeps the last 5,000 events, and shows 50 per page. People on your Hidden list aren't logged.
+Each account has its own log, saved on your computer. It keeps the last 5,000 events and shows 50 per page. People on your Hidden list aren't logged.
 
 Discord doesn't say who ended a friendship, and it never tells you when someone blocks you: both look the same as being unfriended, so the log says "unfriended, blocked, or you removed them". In the same way, losing a server is logged as "kicked, banned, or you left".
 
@@ -163,7 +163,7 @@ Copy the `friendsInVoice` folder into `Vencord/src/userplugins/`, then run `pnpm
 - Alerts only fire while Discord is open. Right after Discord starts or reconnects, the plugin waits a few seconds so it doesn't notify you about everyone who was already online or in voice.
 - The page is drawn on top of Discord's main area (Discord has no API for adding new pages).
 - If a Discord update removes Vencord, run `install.bat` again.
-- My list, the alert lists, the Run away list and the Hidden list are saved in Vencord's plugin settings, so they survive restarts.
+- My list, the alert lists, the Run away list, the Hidden list, Personal Guards and the Log are saved per Discord account, so they survive restarts and a second Discord logged into another account (or switching accounts) gets its own. The first account that opens after updating keeps the lists you had before; other accounts start empty. Options like notifications and smart replies are shared by every account.
 
 ## Contributing
 

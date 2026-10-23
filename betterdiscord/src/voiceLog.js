@@ -1,20 +1,25 @@
+import { accountStore } from "./accountStore.js";
+
 export const MAX_ENTRIES = 5000;
 /** friends and servers, not voice */
 export const ACCOUNT_KINDS = ["friend-request", "friend-added", "friend-removed", "server-removed"];
 // Discord's relationship types: https://docs.discord.com/developers/resources/user#relationship-object-relationship-type
 const FRIEND = 1, INCOMING = 3;
-const STORE_KEY = "voiceLog";
+/** where the log was kept before it was split per account; the first account to load takes it */
+const LEGACY_KEY = "voiceLog";
+const valid = saved => Array.isArray(saved) ? saved.filter(entry => entry?.userId && (entry.from || entry.to)) : [];
 
-// Keeps the last voice joins, leaves and moves, saved with BetterDiscord's plugin data so they survive restarts
+// Keeps the last voice joins, leaves and moves of each account, saved so they survive restarts
 export class VoiceLog {
-    constructor(bridge, data, api) {
+    constructor(bridge, data, api, logs = accountStore("voiceLogs")) {
         this.bridge = bridge;
         this.data = data;
         this.api = api;
-        const saved = api?.Data?.load?.(STORE_KEY);
-        this.entries = Array.isArray(saved) ? saved.filter(entry => entry?.userId && (entry.from || entry.to)).slice(0, MAX_ENTRIES) : [];
+        this.logs = logs;
+        this.accountId = null;
+        this.entries = [];
         this.lastChannel = new Map();
-        this.nextKey = Math.max(0, ...this.entries.map(entry => (entry.key ?? 0) + 1));
+        this.nextKey = 0;
         this.quietUntil = Date.now() + 15000;
         this.onChange = null;
         this.lastRelationship = new Map();
@@ -53,7 +58,27 @@ export class VoiceLog {
     flush() {
         clearTimeout(this.saveTimer);
         this.saveTimer = null;
-        try { this.api?.Data?.save?.(STORE_KEY, this.entries); } catch { /* keep logging even if saving fails */ }
+        // keep logging even if saving fails
+        if (this.accountId) void this.logs.put(this.accountId, this.entries).catch(() => { });
+    }
+    /** show the log of the account that's logged in, keeping the previous account's */
+    async useAccount(id) {
+        if (!id || id === this.accountId) return;
+        if (this.saveTimer) this.flush();
+        if (this.accountId) this.entries = [];
+        this.accountId = id;
+        this.onChange?.();
+        let saved = await this.logs.get(id).catch(() => undefined);
+        const legacy = saved === undefined && this.api?.Data?.load?.(LEGACY_KEY);
+        if (legacy) saved = legacy;
+        if (this.accountId !== id) return;
+        // anything logged while it loaded comes first
+        this.entries = [...this.entries, ...valid(saved)].slice(0, MAX_ENTRIES);
+        this.nextKey = Math.max(this.nextKey, ...this.entries.map(entry => (entry.key ?? 0) + 1));
+        this.onChange?.();
+        if (!legacy && !this.entries.length) return;
+        this.flush();
+        if (legacy) try { this.api.Data.delete?.(LEGACY_KEY); } catch { /* it's copied already */ }
     }
     clear() { this.entries = []; this.onChange?.(); this.flush(); }
     add(entry) {
