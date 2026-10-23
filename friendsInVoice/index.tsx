@@ -33,7 +33,7 @@ import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voice
 
 export { inList, isOnline, toggleInList } from "./notifications";
 
-const VERSION = "1.12.0";
+const VERSION = "1.13.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
