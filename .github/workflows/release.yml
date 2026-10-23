@@ -1,0 +1,57 @@
+# Publishes a release from the Actions tab (Run workflow): tags the commit, attaches the Vencord ZIP the
+# in-plugin updater expects (FriendsInVoice-vX.Y.Z.zip) and the BetterDiscord plugin file, with the notes
+# from .github/release-notes/vX.Y.Z.md on main.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the v, e.g. 1.13.0"
+        required: true
+      ref:
+        description: "Commit or branch to release (its code must already say this version)"
+        required: true
+        default: main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Check the version in the code
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          grep -q "const VERSION = \"$VERSION\";" friendsInVoice/index.tsx || fail "friendsInVoice/index.tsx doesn't say $VERSION"
+          grep -q "const VERSION = \"$VERSION\";" friendsInVoice/notifications.ts || fail "friendsInVoice/notifications.ts doesn't say $VERSION"
+          grep -q "\"version\": \"$VERSION\"" betterdiscord/package.json || fail "betterdiscord/package.json doesn't say $VERSION"
+          grep -q "@version $VERSION" betterdiscord/FriendsInVoice.plugin.js || fail "betterdiscord/FriendsInVoice.plugin.js wasn't rebuilt for $VERSION"
+          git fetch origin main
+          git show "origin/main:.github/release-notes/v$VERSION.md" > /dev/null || fail "Add .github/release-notes/v$VERSION.md to main first"
+
+      - name: Build the release files
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          git archive --format=zip -o "$RUNNER_TEMP/out/FriendsInVoice-v$VERSION.zip" HEAD \
+            friendsInVoice install.bat install.command install.ps1 install.sh README.md README.ar.md LICENSE CONTRIBUTING.md
+          cp betterdiscord/FriendsInVoice.plugin.js "$RUNNER_TEMP/out/"
+          git show "origin/main:.github/release-notes/v$VERSION.md" > "$RUNNER_TEMP/notes.md"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$VERSION" --target "$(git rev-parse HEAD)" --title "FriendsInVoice v$VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP/out/FriendsInVoice-v$VERSION.zip" "$RUNNER_TEMP/out/FriendsInVoice.plugin.js"
