@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { VoiceLog } from "../src/voiceLog.js";
+import { memoryStore } from "./memoryStore.mjs";
 
 const me = "111111111111111111";
 const friend = "222222222222222222";
@@ -13,9 +14,9 @@ const games = "777777777777777777";
 
 const watched = "888888888888888888";
 
-function setup({ saved = null } = {}) {
-    const stored = { voiceLog: saved };
-    const api = { Data: { load: key => stored[key], save: (key, value) => { stored[key] = value; } } };
+function setup({ legacy, logs = memoryStore() } = {}) {
+    const stored = { voiceLog: legacy };
+    const api = { Data: { load: key => stored[key], save: (key, value) => { stored[key] = value; }, delete: key => { delete stored[key]; } } };
     const channels = { [lobby]: { id: lobby, guild_id: guild, name: "Lobby" }, [games]: { id: games, guild_id: guild, name: "Games" } };
     let myRoom = lobby;
     const bridge = {
@@ -28,10 +29,10 @@ function setup({ saved = null } = {}) {
         name: id => `name-${id}`,
         roomDescription: channel => ({ place: "Guild", roomName: channel.name, guildId: channel.guild_id })
     };
-    const log = new VoiceLog(bridge, { value: { hidden: [hiddenUser], watchlist: [watched] } }, api);
+    const log = new VoiceLog(bridge, { value: { hidden: [hiddenUser], watchlist: [watched] } }, api, logs);
     log.quietUntil = 0;
     log.seed();
-    return { log, stored, bridge, setMyRoom: id => { myRoom = id; } };
+    return { log, stored, logs, bridge, setMyRoom: id => { myRoom = id; } };
 }
 
 test("logs joins, moves and leaves with room and server names", () => {
@@ -83,16 +84,35 @@ test("strangers outside my room aren't logged, My list people are", () => {
     assert.deepEqual(log.entries.map(entry => entry.userId), [watched]);
 });
 
-test("the log is saved and loaded back after a restart", () => {
+test("the log is saved and loaded back after a restart", async () => {
     const first = setup();
+    await first.log.useAccount(me);
     first.log.onUpdates([{ userId: friend, guildId: guild, channelId: null }]);
     first.log.flush();
-    assert.equal(first.stored.voiceLog.length, 1);
-    const second = setup({ saved: first.stored.voiceLog });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(first.logs.map.get(me).length, 1);
+    const second = setup({ logs: first.logs });
+    await second.log.useAccount(me);
     assert.equal(second.log.entries[0].kind, "leave");
     second.log.onUpdates([{ userId: friend, guildId: guild, channelId: lobby }]);
     assert.equal(second.log.entries[0].key > second.log.entries[1].key, true);
     second.log.stop();
+});
+
+test("each account has its own log, and the old shared log goes to the first account", async () => {
+    const other = "999999999999999999";
+    const { log, logs, stored } = setup({ legacy: [{ key: 4, time: 1, kind: "join", userId: friend, to: { id: lobby } }] });
+    await log.useAccount(me);
+    assert.equal(log.entries.length, 1);
+    assert.equal(stored.voiceLog, undefined);
+    await log.useAccount(other);
+    assert.equal(log.entries.length, 0);
+    log.onUpdates([{ userId: friend, guildId: guild, channelId: null }]);
+    await log.useAccount(me);
+    assert.equal(log.entries.length, 1);
+    assert.equal(log.entries[0].kind, "join");
+    assert.equal(logs.map.get(other).length, 1);
+    log.stop();
 });
 
 test("friend requests, new friends, lost friends and lost servers are logged", () => {

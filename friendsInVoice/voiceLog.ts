@@ -40,9 +40,12 @@ export interface LogEntry {
 }
 
 export const MAX_ENTRIES = 5000;
-const STORE_KEY = "FriendsInVoice_voiceLog";
+// one log per account; the log from before that goes to the first account that opens in this Discord
+const LEGACY_KEY = "FriendsInVoice_voiceLog";
+const storeKey = (accountId: string) => `${LEGACY_KEY}_${accountId}`;
 
 let entries: LogEntry[] = [];
+let logKey: string | null = null;
 let nextKey = 0;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 const lastChannel = new Map<string, string | null>();
@@ -63,23 +66,40 @@ export function clearLog() {
 // kept in IndexedDB (Vencord's DataStore) so the log survives restarts; written a moment after the last change
 function save() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void DataStore.set(STORE_KEY, entries).catch(() => { }), 2000);
+    saveTimer = setTimeout(flushVoiceLog, 2000);
 }
 
-export async function loadVoiceLog() {
-    const saved = await DataStore.get<LogEntry[]>(STORE_KEY).catch(() => null);
-    if (!Array.isArray(saved) || !saved.length) return;
-    // anything logged while it loaded comes first
-    entries = [...entries, ...saved].slice(0, MAX_ENTRIES);
-    nextKey = Math.max(nextKey, ...entries.map(e => e.key + 1));
+/** the logged-in account changed: keep the old account's log and show the new one's */
+export function switchVoiceLog(accountId: string) {
+    flushVoiceLog();
+    if (logKey) entries = [];
+    logKey = storeKey(accountId);
     emit();
+    void loadVoiceLog(logKey);
+}
+
+async function loadVoiceLog(key: string) {
+    let saved = await DataStore.get<LogEntry[]>(key).catch(() => null);
+    const legacy = saved === undefined;
+    if (legacy) saved = await DataStore.get<LogEntry[]>(LEGACY_KEY).catch(() => null);
+    if (key !== logKey) return;
+    if (Array.isArray(saved) && saved.length) {
+        // anything logged while it loaded comes first
+        entries = [...entries, ...saved].slice(0, MAX_ENTRIES);
+        nextKey = Math.max(nextKey, ...entries.map(e => e.key + 1));
+        emit();
+        save();
+    }
+    if (!legacy) return;
+    await DataStore.set(key, entries).catch(() => { });
+    void DataStore.del(LEGACY_KEY).catch(() => { });
 }
 
 export function flushVoiceLog() {
     if (saveTimer === undefined) return;
     clearTimeout(saveTimer);
     saveTimer = undefined;
-    void DataStore.set(STORE_KEY, entries).catch(() => { });
+    if (logKey) void DataStore.set(logKey, entries).catch(() => { });
 }
 
 export function subscribeLog(fn: () => void) {
