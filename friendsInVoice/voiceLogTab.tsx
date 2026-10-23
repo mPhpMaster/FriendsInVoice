@@ -8,19 +8,22 @@ import { copyToClipboard } from "@utils/clipboard";
 import { classNameFactory } from "@utils/css";
 import { ChannelStore, ContextMenuApi, GuildStore, Menu, NavigationRouter, React, useEffect, useReducer, useState } from "@webpack/common";
 
-import { setPageOpen } from ".";
+import { setPageOpen, settings } from ".";
 import { Avatar, joinRoom, openRoomChannel, personProps, useUser } from "./voiceContent";
-import { clearLog, getLog, LogEntry, LogRoom, subscribeLog } from "./voiceLog";
+import { ACCOUNT_KINDS, clearLog, getLog, LogEntry, LogRoom, MAX_ENTRIES, subscribeLog } from "./voiceLog";
 
 const cl = classNameFactory("vc-fiv-");
 
-type Filter = "all" | "friends" | "myroom" | "me";
+type Filter = "friends" | "mylist" | "myroom" | "me" | "account";
+
+const PAGE_SIZE = 50;
 
 const FILTERS: { key: Filter; label: string; }[] = [
-    { key: "all", label: "Everything" },
     { key: "friends", label: "Friends" },
+    { key: "mylist", label: "My list" },
     { key: "myroom", label: "My room" },
     { key: "me", label: "Me" },
+    { key: "account", label: "Friends & servers" },
 ];
 
 export function useLog() {
@@ -110,7 +113,16 @@ function Where({ room }: { room: LogRoom; }) {
 
 // ---------- rows ----------
 
-const KIND_ICON = { join: "➡️", leave: "⬅️", move: "🔀" };
+const KIND_ICON: Record<LogEntry["kind"], string> = {
+    join: "➡️", leave: "⬅️", move: "🔀",
+    "friend-request": "📨", "friend-added": "🤝", "friend-removed": "💔", "server-removed": "🚪",
+};
+
+function formatTime(time: number) {
+    const date = new Date(time);
+    const clock = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return date.toDateString() === new Date().toDateString() ? clock : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${clock}`;
+}
 
 function LogRow({ entry }: { entry: LogEntry; }) {
     const user = useUser(entry.userId);
@@ -118,7 +130,11 @@ function LogRow({ entry }: { entry: LogEntry; }) {
     const name = entry.isMe ? "You" : entry.userName;
 
     let what: React.ReactNode;
-    if (entry.kind === "join") what = <>joined <Where room={to!} /></>;
+    if (entry.kind === "friend-request") what = <>sent you a friend request</>;
+    else if (entry.kind === "friend-added") what = <>is now your friend</>;
+    else if (entry.kind === "friend-removed") what = <span title="Discord doesn't say who removed the friendship, and being blocked looks the same">is no longer your friend <span className={cl("muted")}>(unfriended, blocked, or you removed them)</span></span>;
+    else if (entry.kind === "server-removed") what = <>are no longer in <b>{from?.place ?? "a server"}</b> <span className={cl("muted")}>(kicked, banned, or you left)</span></>;
+    else if (entry.kind === "join") what = <>joined <Where room={to!} /></>;
     else if (entry.kind === "leave") what = <>left <Where room={from!} /></>;
     else if (from && to && from.guildId === to.guildId) what = <>moved from <RoomLink room={from} /> to <RoomLink room={to} /> <span className={cl("muted")}>in</span> <PlaceLink room={to} /></>;
     else what = <>moved from {from ? <Where room={from} /> : "a room"} to {to ? <Where room={to} /> : "a room"}</>;
@@ -126,7 +142,7 @@ function LogRow({ entry }: { entry: LogEntry; }) {
     return (
         <div className={cl("log-row", entry.myRoom && "log-myroom")}>
             <span className={cl("log-time")} title={new Date(entry.time).toLocaleString()}>
-                {new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                {formatTime(entry.time)}
             </span>
             <span className={cl("log-kind")}>{KIND_ICON[entry.kind]}</span>
             <span className={cl("log-person", !entry.isMe && "clickable")} {...(entry.isMe ? {} : personProps(user))}>
@@ -142,8 +158,10 @@ function LogRow({ entry }: { entry: LogEntry; }) {
 
 // ---------- tab ----------
 
-function matches(entry: LogEntry, filter: Filter, q: string) {
+function matches(entry: LogEntry, filter: Filter, q: string, watchlist: string[]) {
+    if ((filter === "account") !== ACCOUNT_KINDS.includes(entry.kind)) return false;
     if (filter === "friends" && !entry.isFriend) return false;
+    if (filter === "mylist" && !watchlist.includes(entry.userId)) return false;
     if (filter === "myroom" && !entry.myRoom) return false;
     if (filter === "me" && !entry.isMe) return false;
     if (!q) return true;
@@ -153,10 +171,16 @@ function matches(entry: LogEntry, filter: Filter, q: string) {
 
 export function LogTab() {
     const log = useLog();
-    const [filter, setFilter] = useState<Filter>("all");
+    const { watchlist } = settings.use(["watchlist"]);
+    const [filter, setFilter] = useState<Filter>("friends");
     const [query, setQuery] = useState("");
+    const [page, setPage] = useState(0);
     const q = query.trim().toLowerCase();
-    const shown = log.filter(e => matches(e, filter, q));
+    const shown = log.filter(e => matches(e, filter, q, watchlist));
+    const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+    const current = Math.min(page, pages - 1);
+
+    useEffect(() => setPage(0), [filter, q]);
 
     return (
         <>
@@ -178,12 +202,19 @@ export function LogTab() {
                 ? <div className={cl("empty")}>
                     {log.length
                         ? "Nothing matches."
-                        : "Nothing yet. Every time someone joins, leaves or moves between voice rooms in your servers, it shows up here, including people coming into and leaving your own room."}
+                        : "Nothing yet. Every time a friend, someone on My list, or someone in your room joins, leaves or moves between voice rooms, it shows up here."}
                 </div>
-                : <div className={cl("log-list")}>{shown.map(e => <LogRow key={e.key} entry={e} />)}</div>}
+                : <div className={cl("log-list")}>{shown.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE).map(e => <LogRow key={e.key} entry={e} />)}</div>}
+            {pages > 1 && (
+                <div className={cl("log-pages")}>
+                    <span className={cl("log-filter", current === 0 && "log-page-off")} onClick={() => setPage(Math.max(0, current - 1))}>‹ Newer</span>
+                    <span className={cl("muted")}>Page {current + 1} of {pages} · {shown.length} events</span>
+                    <span className={cl("log-filter", current === pages - 1 && "log-page-off")} onClick={() => setPage(Math.min(pages - 1, current + 1))}>Older ›</span>
+                </div>
+            )}
             <div className={cl("muted", "log-hint")}>
                 Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options.
-                The log keeps the last 500 events until you restart Discord.
+                The log is saved on this computer and keeps the last {MAX_ENTRIES.toLocaleString()} events.
             </div>
         </>
     );

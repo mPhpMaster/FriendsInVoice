@@ -268,3 +268,5 @@
 .vc-fiv-log-guild-icon { width: 16px; height: 16px; border-radius: 4px; }
 .vc-fiv-log-hint { margin-top: 12px; font-size: 12px; }
 .vc-fiv-log-person.vc-fiv-clickable:hover b { text-decoration: underline; }
+.vc-fiv-log-pages { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; font-size: 13px; }
+.vc-fiv-log-page-off { opacity: .4; pointer-events: none; }

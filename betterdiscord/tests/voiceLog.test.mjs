@@ -11,22 +11,27 @@ const guild = "555555555555555555";
 const lobby = "666666666666666666";
 const games = "777777777777777777";
 
-function setup() {
+const watched = "888888888888888888";
+
+function setup({ saved = null } = {}) {
+    const stored = { voiceLog: saved };
+    const api = { Data: { load: key => stored[key], save: (key, value) => { stored[key] = value; } } };
     const channels = { [lobby]: { id: lobby, guild_id: guild, name: "Lobby" }, [games]: { id: games, guild_id: guild, name: "Games" } };
     let myRoom = lobby;
     const bridge = {
         voiceStore: { getAllVoiceStates: () => ({ [guild]: { [me]: { userId: me, channelId: lobby }, [friend]: { userId: friend, channelId: games } } }) },
-        relationshipStore: { isFriend: id => id === friend },
+        relationshipStore: { isFriend: id => id === friend, getMutableRelationships: () => new Map([[friend, 1]]) },
+        guildStore: { getGuild: id => id === guild ? { id, name: "Guild" } : undefined, getGuilds: () => ({ [guild]: {} }) },
         currentId: () => me,
         myVoiceChannel: () => myRoom,
         channel: id => channels[id],
         name: id => `name-${id}`,
         roomDescription: channel => ({ place: "Guild", roomName: channel.name, guildId: channel.guild_id })
     };
-    const log = new VoiceLog(bridge, { value: { hidden: [hiddenUser] } });
+    const log = new VoiceLog(bridge, { value: { hidden: [hiddenUser], watchlist: [watched] } }, api);
     log.quietUntil = 0;
     log.seed();
-    return { log, setMyRoom: id => { myRoom = id; } };
+    return { log, stored, bridge, setMyRoom: id => { myRoom = id; } };
 }
 
 test("logs joins, moves and leaves with room and server names", () => {
@@ -69,4 +74,36 @@ test("hidden people, repeated states and the reconnect burst aren't logged", () 
     log.onUpdates([{ userId: stranger, guildId: guild, channelId: games }]);
     log.stop();
     assert.equal(log.entries.length, 0);
+});
+
+test("strangers outside my room aren't logged, My list people are", () => {
+    const { log } = setup();
+    log.onUpdates([{ userId: stranger, guildId: guild, channelId: games }]);
+    log.onUpdates([{ userId: watched, guildId: guild, channelId: games }]);
+    assert.deepEqual(log.entries.map(entry => entry.userId), [watched]);
+});
+
+test("the log is saved and loaded back after a restart", () => {
+    const first = setup();
+    first.log.onUpdates([{ userId: friend, guildId: guild, channelId: null }]);
+    first.log.flush();
+    assert.equal(first.stored.voiceLog.length, 1);
+    const second = setup({ saved: first.stored.voiceLog });
+    assert.equal(second.log.entries[0].kind, "leave");
+    second.log.onUpdates([{ userId: friend, guildId: guild, channelId: lobby }]);
+    assert.equal(second.log.entries[0].key > second.log.entries[1].key, true);
+    second.log.stop();
+});
+
+test("friend requests, new friends, lost friends and lost servers are logged", () => {
+    const { log, bridge } = setup();
+    log.onRelationshipAdd({ id: stranger, type: 3 });
+    log.onRelationshipAdd({ id: stranger, type: 1 });
+    log.onRelationshipRemove({ id: friend, type: 1 });
+    log.onGuildDelete({ id: guild, unavailable: true });
+    bridge.guildStore.getGuild = () => undefined; // already gone from the store, so the cached name is used
+    log.onGuildDelete({ id: guild });
+    log.stop();
+    assert.deepEqual(log.entries.map(entry => entry.kind), ["server-removed", "friend-removed", "friend-added", "friend-request"]);
+    assert.equal(log.entries[0].from.place, "Guild");
 });
