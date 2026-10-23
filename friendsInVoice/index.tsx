@@ -18,6 +18,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
+import { applyAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
 import { GuardInviteCard } from "./personalGuardsCard";
 import { GuardNotificationHost } from "./personalGuardsNotice";
@@ -35,7 +36,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 
 export { inList, isOnline, toggleInList } from "./notifications";
 
-const VERSION = "1.15.0";
+const VERSION = "1.16.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -88,6 +89,24 @@ export const settings = definePluginSettings({
         description: "Never go idle: keep your status when you step away from the computer",
         default: false,
         restartNeeded: true,
+    },
+    autoStatus: {
+        type: OptionType.BOOLEAN,
+        description: "Auto switch status: change your status when you join or leave a call (pick both statuses below)",
+        default: false,
+        onChange: () => void applyAutoStatus(),
+    },
+    statusInCall: {
+        type: OptionType.SELECT,
+        description: "Auto switch status: your status while you're in a voice channel or call",
+        options: statusOptions("online"),
+        onChange: () => void applyAutoStatus(),
+    },
+    statusOutsideCall: {
+        type: OptionType.SELECT,
+        description: "Auto switch status: your status when you're not in a call",
+        options: statusOptions("invisible"),
+        onChange: () => void applyAutoStatus(),
     },
     watchlist: {
         type: OptionType.CUSTOM,
@@ -373,6 +392,20 @@ function toggleAway(key: AwayKey) {
     });
 }
 
+function toggleAutoStatus() {
+    const on = !settings.store.autoStatus;
+    settings.store.autoStatus = on;
+    ContextMenuApi.closeContextMenu();
+    void applyAutoStatus();
+    const label = (value: string) => statusOptions("").find(option => option.value === value)?.label ?? value;
+    showNotification({
+        title: `Auto switch status: ${on ? "ON" : "OFF"}`,
+        body: on
+            ? `${label(settings.store.statusInCall)} in calls, ${label(settings.store.statusOutsideCall)} otherwise. Change these in the plugin settings.`
+            : "Your status stays as it is now.",
+    });
+}
+
 // options shown when you right-click yourself
 export function selfMenuItems() {
     return (
@@ -391,6 +424,12 @@ export function selfMenuItems() {
                     />
                 );
             })}
+            <Menu.MenuCheckboxItem
+                id="vc-fiv-autoStatus"
+                label="Auto switch status in calls"
+                checked={settings.store.autoStatus}
+                action={toggleAutoStatus}
+            />
             {awayChanged() && (
                 <Menu.MenuItem id="vc-fiv-reload" label="Reload Discord to apply" action={() => location.reload()} />
             )}
@@ -446,6 +485,7 @@ export default definePlugin({
             startQuietPeriod();
             void loadAccount();
             setTimeout(() => void showWhatsNew(VERSION), 3000);
+            void applyAutoStatus();
         },
         LOGOUT() {
             leaveAccount();
@@ -453,6 +493,7 @@ export default definePlugin({
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; oldChannelId?: string | null; }[]; }) {
             onVoiceStateUpdates(voiceStates);
             onVoiceLogUpdates(voiceStates);
+            onAutoStatusVoiceUpdates(voiceStates);
         },
         RELATIONSHIP_ADD({ relationship }: { relationship: { id: string; type: number; user?: any; }; }) {
             onRelationshipAdd(relationship);
@@ -519,6 +560,7 @@ export default definePlugin({
         if (UserStore.getCurrentUser()) setTimeout(() => void showWhatsNew(VERSION), 3000);
         setTimeout(() => checkForUpdate(), 10_000);
         startUpdateTimer();
+        void applyAutoStatus();
     },
 
     stop() {
