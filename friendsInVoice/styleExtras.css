@@ -273,3 +273,14 @@
 .vc-fiv-log-date input { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-subtle, rgb(255 255 255 / 8%)); background: var(--input-background, var(--background-mod-normal, #1e1f22)); color: var(--text-default, #dbdee1); font-size: 13px; color-scheme: dark; }
 .vc-fiv-log-select { width: 220px; }
 .vc-fiv-log-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted, #949ba4); }
+
+/* "What's new" window after an update */
+.vc-fiv-whats-new { display: flex; flex-direction: column; gap: 18px; color: var(--text-default); font-size: 14px; line-height: 1.45; user-select: text; }
+.vc-fiv-whats-new-release h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; font-size: 18px; font-weight: 700; }
+.vc-fiv-whats-new-release h2 .vc-fiv-link { font-size: 13px; font-weight: 500; }
+.vc-fiv-whats-new-release h3 { margin: 12px 0 4px; font-size: 15px; font-weight: 600; }
+.vc-fiv-whats-new-release p { margin: 6px 0; }
+.vc-fiv-whats-new-release ul { margin: 4px 0; padding-left: 20px; list-style: disc; }
+.vc-fiv-whats-new-release li { margin: 3px 0; }
+.vc-fiv-whats-new-release code { padding: 0 4px; border-radius: 4px; background: var(--background-mod-strong, #0003); font-size: 13px; }
+.vc-fiv-whats-new-release + .vc-fiv-whats-new-release { padding-top: 14px; border-top: 1px solid var(--border-subtle, #4e505855); }

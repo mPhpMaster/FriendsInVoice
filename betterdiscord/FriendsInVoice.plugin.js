@@ -102,13 +102,13 @@ var AlertService = class {
 
 // src/accountStore.js
 var DB_NAME = "FriendsInVoice";
-var STORES = ["accounts", "voiceLogs"];
+var STORES = ["accounts", "voiceLogs", "meta"];
 var dbPromise = null;
 function openDb() {
   return dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, 2);
     request.onupgradeneeded = () => {
-      for (const name of STORES) request.result.createObjectStore(name);
+      for (const name of STORES) if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -148,6 +148,7 @@ var DEFAULTS = {
   anthropicApiKey: "",
   aiModel: "claude-opus-5-5",
   checkForUpdates: true,
+  showWhatsNew: true,
   personalGuards: [],
   knownGuardGrants: [],
   guardPeerKeys: [],
@@ -160,7 +161,7 @@ function normalizeData(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const data = { ...DEFAULTS };
   for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates"])
+  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew"])
     if (typeof source[key] === "boolean") data[key] = source[key];
   for (const key of ["anthropicApiKey", "aiModel"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
@@ -1610,12 +1611,174 @@ function heading(text, level = 3) {
   return element(`h${level}`, "", text);
 }
 
+// ../friendsInVoice/whatsNewNotes.ts
+var RELEASES_URL = "https://api.github.com/repos/mPhpMaster/FriendsInVoice/releases?per_page=30";
+var MAX_RELEASES = 5;
+var HIDDEN_SECTIONS = /^(update|verification)\b/i;
+var INLINE = /\*\*(.+?)\*\*|`([^`]+)`|\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g;
+function parseInline(text) {
+  const parts = [];
+  let at = 0;
+  for (const match of text.matchAll(INLINE)) {
+    if (match.index > at) parts.push({ text: text.slice(at, match.index) });
+    if (match[1] !== void 0) parts.push(...parseInline(match[1]).map((part) => ({ ...part, bold: true })));
+    else if (match[2] !== void 0) parts.push({ text: match[2], code: true });
+    else parts.push({ text: match[3], href: match[4] });
+    at = match.index + match[0].length;
+  }
+  if (at < text.length) parts.push({ text: text.slice(at) });
+  return parts;
+}
+function parseNotes(markdown) {
+  const blocks = [];
+  let hidden = false;
+  for (const raw of markdown.replace(/\r\n?/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const heading2 = /^#{1,6}\s+(.*)$/.exec(line);
+    if (heading2) {
+      hidden = HIDDEN_SECTIONS.test(heading2[1]);
+      if (!hidden && !/^what'?s new$/i.test(heading2[1])) blocks.push({ type: "heading", parts: parseInline(heading2[1]) });
+      continue;
+    }
+    if (hidden) continue;
+    const item = /^[-*]\s+(.*)$/.exec(line);
+    blocks.push({ type: item ? "item" : "text", parts: parseInline(item ? item[1] : line) });
+  }
+  return blocks;
+}
+function pickReleases(releases, seen, current) {
+  const picked = [];
+  for (const release of releases) {
+    const version = String(release.tag_name ?? "").replace(/^v/, "");
+    if (release.draft || release.prerelease || !parseVersion(version) || isNewer(version, current)) continue;
+    if (seen ? !isNewer(version, seen) : version !== current) continue;
+    const blocks = parseNotes(release.body ?? "");
+    if (!blocks.length) continue;
+    picked.push({
+      version,
+      url: release.html_url ?? `https://github.com/mPhpMaster/FriendsInVoice/releases/tag/v${version}`,
+      blocks
+    });
+  }
+  return picked.sort((a, b) => isNewer(a.version, b.version) ? -1 : 1).slice(0, MAX_RELEASES);
+}
+function whatsNewAction(seen, current, usedBefore) {
+  if (seen === current) return "nothing";
+  if (seen ? isNewer(current, seen) : usedBefore) return "show";
+  return "remember";
+}
+
+// src/whatsNew.js
+var REPO_URL = "https://github.com/mPhpMaster/FriendsInVoice";
+var SEEN_KEY = "whatsNewSeen";
+var openLink = (url) => window.open(url, "_blank", "noopener,noreferrer");
+function inline(parent, parts) {
+  for (const part of parts) {
+    let node = part.code ? element("code", "", part.text) : document.createTextNode(part.text);
+    if (part.bold) {
+      const strong = element("strong");
+      strong.append(node);
+      node = strong;
+    }
+    if (part.href) {
+      const link2 = element("a", "fivbd-link");
+      link2.href = part.href;
+      link2.addEventListener("click", (event) => {
+        event.preventDefault();
+        openLink(part.href);
+      });
+      link2.append(node);
+      node = link2;
+    }
+    parent.append(node);
+  }
+  return parent;
+}
+function renderRelease(release) {
+  const section = element("section", "fivbd-whats-new-release");
+  const title = element("h3", "", `v${release.version} `);
+  title.append(button("View on GitHub", () => openLink(release.url)));
+  section.append(title);
+  let list = null;
+  for (const block of release.blocks) {
+    if (block.type === "item") {
+      list ??= section.appendChild(element("ul"));
+      list.append(inline(element("li"), block.parts));
+      continue;
+    }
+    list = null;
+    section.append(inline(element(block.type === "heading" ? "h4" : "p"), block.parts));
+  }
+  return section;
+}
+var WhatsNew = class {
+  constructor(api, data, version, meta = accountStore("meta")) {
+    this.api = api;
+    this.data = data;
+    this.version = version;
+    this.meta = meta;
+    this.checked = false;
+    this.shade = null;
+    this.onKey = (event) => {
+      if (event.key === "Escape") this.close();
+    };
+  }
+  async check() {
+    if (this.checked) return;
+    this.checked = true;
+    try {
+      const seen = await this.meta.get(SEEN_KEY) ?? null;
+      const usedBefore = !!this.data.owner || this.data.value.watchlist.length > 0;
+      const action = whatsNewAction(seen, this.version, usedBefore);
+      if (action === "nothing") return;
+      if (action === "show" && this.data.value.showWhatsNew) {
+        const response = await this.api.Net.fetch(RELEASES_URL, { headers: { Accept: "application/vnd.github+json" } });
+        if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
+        const releases = pickReleases(await response.json(), seen, this.version);
+        if (!releases.length) return;
+        this.open(releases);
+      }
+      await this.meta.put(SEEN_KEY, this.version);
+    } catch (error) {
+      this.checked = false;
+      this.api.Logger.error("What's new failed", error);
+    }
+  }
+  open(releases) {
+    this.close();
+    this.shade = element("div", "fivbd-shade");
+    this.shade.addEventListener("click", (event) => {
+      if (event.target === this.shade) this.close();
+    });
+    const panel = element("section", "fivbd-panel fivbd-whats-new");
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", "What's new in Friends In Voice");
+    const head = element("header", "fivbd-head");
+    add(head, element("h2", "", `Friends In Voice updated to v${releases[0].version}`), button("\u2715", () => this.close()));
+    const body = element("main", "fivbd-body");
+    for (const release of releases) body.append(renderRelease(release));
+    const foot = element("footer", "fivbd-foot");
+    add(foot, button("Open GitHub", () => openLink(REPO_URL)), button("Got it", () => this.close(), "active"));
+    add(panel, head, body, foot);
+    this.shade.append(panel);
+    document.body.append(this.shade);
+    document.addEventListener("keydown", this.onKey);
+  }
+  close() {
+    this.shade?.remove();
+    this.shade = null;
+    document.removeEventListener("keydown", this.onKey);
+  }
+};
+
 // src/settingsUi.js
 var SWITCHES = [
   ["notifyOnce", "Remove an online alert after it fires once"],
   ["smartReplies", "Show built-in smart replies in the dashboard"],
   ["smartRepliesAi", "Enable the optional Claude reply button"],
-  ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"]
+  ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
+  ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"]
 ];
 function settingsPanel(view) {
   const root = element("div", "fivbd-setting");
@@ -1652,7 +1815,7 @@ function settingsPanel(view) {
     add(label, element("span", "", title), input);
     root.append(label);
   }
-  root.append(button("Check for updates", () => void view.alerts.checkUpdate(true)));
+  root.append(button("Check for updates", () => void view.alerts.checkUpdate(true)), button("Open GitHub", () => openLink(REPO_URL)));
   return root;
 }
 
@@ -1681,6 +1844,12 @@ var STYLE = `
 .fivbd-log-select{max-width:220px;cursor:pointer}.fivbd-log-select option{background:var(--background-floating,#111214);color:var(--text-normal,#dbdee1)}.fivbd-log-date{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
 .fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
+.fivbd-whats-new{width:min(640px,100%)}.fivbd-whats-new .fivbd-body{min-height:0;line-height:1.45;user-select:text}
+.fivbd-whats-new-release h3{display:flex;align-items:center;gap:10px;margin:0 0 6px;font-size:17px}.fivbd-whats-new-release h4{margin:12px 0 4px;font-size:15px}
+.fivbd-whats-new-release p{margin:6px 0}.fivbd-whats-new-release ul{margin:4px 0;padding-left:20px}.fivbd-whats-new-release li{margin:3px 0}
+.fivbd-whats-new-release code{padding:0 4px;border-radius:4px;background:var(--background-mod-strong)}
+.fivbd-whats-new-release+.fivbd-whats-new-release{margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle)}
+.fivbd-foot-links{display:flex;gap:7px}.fivbd-link{color:var(--text-link);cursor:pointer}.fivbd-link:hover{text-decoration:underline}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
 `;
 
@@ -2461,11 +2630,9 @@ var Dashboard = class {
       body.textContent = `This panel could not load: ${String(error)}`;
     }
     const foot = element("footer", "fivbd-foot");
-    add(
-      foot,
-      element("span", "", `BetterDiscord \xB7 v${this.version}`),
-      button("Check for updates", () => void this.alerts?.checkUpdate(true))
-    );
+    const links = element("span", "fivbd-foot-links");
+    add(links, button("GitHub", () => openLink(REPO_URL)), button("Check for updates", () => void this.alerts?.checkUpdate(true)));
+    add(foot, element("span", "", `BetterDiscord \xB7 v${this.version}`), links);
     add(panel, head, tabs, body, foot);
     this.shade.replaceChildren(panel);
     body.scrollTop = scroll;
@@ -2490,6 +2657,7 @@ module.exports = class FriendsInVoice {
       this.replies = new ReplyService(this.api, this.bridge, this.data);
       this.alerts = new AlertService(this.api, this.bridge, this.data, (tab) => this.view.open(tab), this.version);
       this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
+      this.whatsNew = new WhatsNew(this.api, this.data, this.version);
       this.voiceLog.onChange = () => {
         if (this.view.tab === "log") this.view.refresh();
       };
@@ -2503,10 +2671,14 @@ module.exports = class FriendsInVoice {
         void this.voiceLog.useAccount(id);
       };
       this.data.onAccount = () => this.view.refresh();
+      const showWhatsNew = () => {
+        this.whatsNewTimer = setTimeout(() => void this.whatsNew.check(), 3e3);
+      };
       const onConnect = () => {
         this.alerts.reconnect();
         this.voiceLog.reconnect();
         loadAccount();
+        showWhatsNew();
       };
       const onLogout = () => {
         this.data.leave();
@@ -2542,6 +2714,7 @@ module.exports = class FriendsInVoice {
       this.updateTimer = setInterval(() => void this.alerts.checkUpdate(), 6 * 60 * 60 * 1e3);
       this.started = true;
       void this.alerts.checkUpdate();
+      if (this.bridge.currentId()) showWhatsNew();
     } catch (error) {
       this.api.UI.showToast(`FriendsInVoice could not start: ${String(error)}`, { type: "error" });
       this.stop();
@@ -2551,6 +2724,7 @@ module.exports = class FriendsInVoice {
   stop() {
     clearInterval(this.pollTimer);
     clearInterval(this.updateTimer);
+    clearTimeout(this.whatsNewTimer);
     for (const unsubscribe of this.unsubscribers.splice(0).reverse()) {
       try {
         unsubscribe?.();
@@ -2561,6 +2735,7 @@ module.exports = class FriendsInVoice {
     this.guards?.stop();
     this.voiceLog?.stop();
     this.view?.stop();
+    this.whatsNew?.close();
     this.started = false;
   }
   onSwitch() {

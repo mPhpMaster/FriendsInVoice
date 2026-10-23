@@ -31,6 +31,7 @@ import { useVoiceData } from "./voiceContent";
 import { flushVoiceLog, onGuildDelete, onGuildUpdate, onRelationshipAdd, onRelationshipRemove, onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
 import { LogTab, useLog } from "./voiceLogTab";
 import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voiceTabs";
+import { REPO_URL, showWhatsNew } from "./whatsNew";
 
 export { inList, isOnline, toggleInList } from "./notifications";
 
@@ -69,6 +70,11 @@ export const settings = definePluginSettings({
     checkForUpdates: {
         type: OptionType.BOOLEAN,
         description: "Show a notification when a new version of Friends in Voice is released",
+        default: true,
+    },
+    showWhatsNew: {
+        type: OptionType.BOOLEAN,
+        description: "After Friends in Voice updates, show what's new the next time Discord starts",
         default: true,
     },
     stayInVoice: {
@@ -294,6 +300,8 @@ function FriendsInVoicePage() {
                     {" · "}v{VERSION}{" · "}
                     <span className={cl("link")} onClick={() => checkForUpdate(true)}>Check for updates</span>
                     {" · "}
+                    <span className={cl("link")} title="Source code, releases and issues" onClick={() => VencordNative.native.openExternal(REPO_URL)}>GitHub</span>
+                    {" · "}
                     <span className={cl("link")} title="Like the plugin? Support it on PayPal" onClick={() => VencordNative.native.openExternal(DONATE_URL)}>❤️ Donate</span>
                 </div>
             </div>
@@ -437,6 +445,7 @@ export default definePlugin({
         CONNECTION_OPEN() {
             startQuietPeriod();
             void loadAccount();
+            setTimeout(() => void showWhatsNew(VERSION), 3000);
         },
         LOGOUT() {
             leaveAccount();
@@ -506,6 +515,8 @@ export default definePlugin({
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
 
+        // enabled while Discord is already running, so CONNECTION_OPEN won't come
+        if (UserStore.getCurrentUser()) setTimeout(() => void showWhatsNew(VERSION), 3000);
         setTimeout(() => checkForUpdate(), 10_000);
         startUpdateTimer();
     },
