@@ -48,7 +48,7 @@ Right-click a user → **Hide from In voice**. They stop showing up in the 🔊 
 
 ### 📜 Log
 
-A history of what happens around you: when a **friend**, someone on **My list**, or someone in **your room** joins, leaves or moves between voice rooms, with the time, the person, the room and the server. People coming into or leaving the room you're sitting in are tagged **YOUR ROOM**, even if they aren't your friends. It also logs **friend requests**, **new friends**, friends you **lost**, and servers you're **no longer in**. Filter by Friends, My list, My room, Me, or Friends & servers, or search by name.
+A history of what happens around you: when a **friend**, someone on **My list**, or someone in **your room** joins, leaves or moves between voice rooms, with the time, the person, the room and the server. People coming into or leaving the room you're sitting in are tagged **YOUR ROOM**, even if they aren't your friends. It also logs **friend requests**, **new friends**, friends you **lost**, and servers you're **no longer in**. Filter by Friends, My list, My room, Me, or Friends & servers, then narrow it to one server, one person, or a date and time range, or search by name.
 
 Everything in the log can be clicked: a **person** opens your DM with them (right-click for Discord's user menu), a **room** opens it (right-click for Discord's channel menu: join, mute, copy link…) and a **server** takes you to it (right-click for Discord's server menu). When the room or server isn't on screen in Discord's sidebar, right-click shows a short menu with the main actions instead.
 
