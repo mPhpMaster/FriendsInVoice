@@ -27,7 +27,7 @@ import type { GuardGrant, GuardInvite } from "./personalGuardsTypes";
 import { SmartReplies } from "./smartReplies";
 import { UserContextPatch } from "./userContextMenu";
 import { useVoiceData } from "./voiceContent";
-import { onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
+import { flushVoiceLog, loadVoiceLog, onGuildDelete, onGuildUpdate, onRelationshipAdd, onRelationshipRemove, onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
 import { LogTab, useLog } from "./voiceLogTab";
 import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voiceTabs";
 
@@ -438,6 +438,21 @@ export default definePlugin({
             onVoiceStateUpdates(voiceStates);
             onVoiceLogUpdates(voiceStates);
         },
+        RELATIONSHIP_ADD({ relationship }: { relationship: { id: string; type: number; user?: any; }; }) {
+            onRelationshipAdd(relationship);
+        },
+        RELATIONSHIP_REMOVE({ relationship }: { relationship: { id: string; type?: number; }; }) {
+            onRelationshipRemove(relationship);
+        },
+        GUILD_CREATE({ guild }: { guild: { id: string; }; }) {
+            onGuildUpdate(guild.id);
+        },
+        GUILD_UPDATE({ guild }: { guild: { id: string; }; }) {
+            onGuildUpdate(guild.id);
+        },
+        GUILD_DELETE({ guild }: { guild: { id: string; unavailable?: boolean; }; }) {
+            onGuildDelete(guild);
+        },
         MESSAGE_CREATE({ message }: { message: { id: string; channel_id: string; content: string; author: { id: string; bot?: boolean; }; }; }) {
             handleGuardMessage(settings.store, message);
         },
@@ -479,6 +494,7 @@ export default definePlugin({
         seedStatuses();
         seedVoiceChannels();
         seedVoiceLog();
+        void loadVoiceLog();
         PresenceStore.addChangeListener(onPresenceChange);
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
@@ -488,6 +504,7 @@ export default definePlugin({
     },
 
     stop() {
+        flushVoiceLog();
         clearGuardRuntime();
         removeMessageAccessory("FriendsInVoiceSmartReplies");
         removeMessageAccessory("FriendsInVoiceGuardInvite");

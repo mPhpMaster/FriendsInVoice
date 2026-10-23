@@ -1,17 +1,36 @@
-const MAX_ENTRIES = 500;
+export const MAX_ENTRIES = 5000;
+/** friends and servers, not voice */
+export const ACCOUNT_KINDS = ["friend-request", "friend-added", "friend-removed", "server-removed"];
+// Discord's relationship types: https://docs.discord.com/developers/resources/user#relationship-object-relationship-type
+const FRIEND = 1, INCOMING = 3;
+const STORE_KEY = "voiceLog";
 
-// Keeps the last voice joins, leaves and moves in memory, the same way the Vencord Log tab does
+// Keeps the last voice joins, leaves and moves, saved with BetterDiscord's plugin data so they survive restarts
 export class VoiceLog {
-    constructor(bridge, data) {
+    constructor(bridge, data, api) {
         this.bridge = bridge;
         this.data = data;
-        this.entries = [];
+        this.api = api;
+        const saved = api?.Data?.load?.(STORE_KEY);
+        this.entries = Array.isArray(saved) ? saved.filter(entry => entry?.userId && (entry.from || entry.to)).slice(0, MAX_ENTRIES) : [];
         this.lastChannel = new Map();
-        this.nextKey = 0;
+        this.nextKey = Math.max(0, ...this.entries.map(entry => (entry.key ?? 0) + 1));
         this.quietUntil = Date.now() + 15000;
         this.onChange = null;
+        this.lastRelationship = new Map();
+        this.guildCache = new Map();
+    }
+    guild(id) {
+        const guild = this.bridge.guildStore?.getGuild?.(id);
+        if (!guild) return this.guildCache.get(id) ?? null;
+        const room = { id, guildId: id, roomName: "", place: guild.name };
+        this.guildCache.set(id, room);
+        return room;
     }
     seed() {
+        this.lastRelationship.clear();
+        for (const [id, type] of this.bridge.relationshipStore.getMutableRelationships?.() ?? []) this.lastRelationship.set(id, type);
+        for (const id of Object.keys(this.bridge.guildStore?.getGuilds?.() ?? {})) this.guild(id);
         this.lastChannel.clear();
         for (const states of Object.values(this.bridge.voiceStore.getAllVoiceStates?.() ?? {}))
             for (const state of Object.values(states ?? {})) if (state?.channelId) this.lastChannel.set(state.userId, state.channelId);
@@ -22,8 +41,51 @@ export class VoiceLog {
         clearTimeout(this.reseedTimer);
         this.reseedTimer = setTimeout(() => this.seed(), 15000);
     }
-    stop() { clearTimeout(this.reseedTimer); }
-    clear() { this.entries = []; this.onChange?.(); }
+    stop() {
+        clearTimeout(this.reseedTimer);
+        if (this.saveTimer) this.flush();
+    }
+    // written a few seconds after the last change, not on every event
+    save() {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = setTimeout(() => this.flush(), 5000);
+    }
+    flush() {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = null;
+        try { this.api?.Data?.save?.(STORE_KEY, this.entries); } catch { /* keep logging even if saving fails */ }
+    }
+    clear() { this.entries = []; this.onChange?.(); this.flush(); }
+    add(entry) {
+        this.entries = [{ key: this.nextKey++, time: Date.now(), from: null, to: null, myRoom: false, ...entry }, ...this.entries].slice(0, MAX_ENTRIES);
+        this.onChange?.();
+        this.save();
+    }
+    person(userId, kind) {
+        if (this.data.value.hidden.includes(userId)) return;
+        this.add({ kind, userId, userName: this.bridge.name(userId), isMe: false, isFriend: !!this.bridge.relationshipStore.isFriend?.(userId) });
+    }
+    onRelationshipAdd(relationship) {
+        if (!relationship?.id) return;
+        const before = this.lastRelationship.get(relationship.id);
+        this.lastRelationship.set(relationship.id, relationship.type);
+        if (Date.now() < this.quietUntil || before === relationship.type) return;
+        if (relationship.type === INCOMING) this.person(relationship.id, "friend-request");
+        else if (relationship.type === FRIEND) this.person(relationship.id, "friend-added");
+    }
+    // Discord doesn't say who ended a friendship, and being blocked looks the same as being unfriended
+    onRelationshipRemove(relationship) {
+        if (!relationship?.id) return;
+        const before = this.lastRelationship.get(relationship.id) ?? relationship.type;
+        this.lastRelationship.delete(relationship.id);
+        if (Date.now() >= this.quietUntil && before === FRIEND) this.person(relationship.id, "friend-removed");
+    }
+    // GUILD_DELETE also fires during a Discord outage (unavailable: true); that isn't losing the server
+    onGuildDelete(guild) {
+        if (!guild?.id || guild.unavailable || Date.now() < this.quietUntil) return;
+        const server = this.guild(guild.id), me = this.bridge.currentId();
+        if (server && me) this.add({ kind: "server-removed", userId: me, userName: this.bridge.name(me), isMe: true, isFriend: false, from: server });
+    }
     room(channelId) {
         const channel = channelId && this.bridge.channel(channelId);
         return channel ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
@@ -41,19 +103,23 @@ export class VoiceLog {
             if (prev === now || Date.now() < this.quietUntil) continue;
             const isMe = state.userId === me;
             if (!isMe && this.data.value.hidden.includes(state.userId)) continue;
+            const isFriend = !!this.bridge.relationshipStore.isFriend?.(state.userId);
+            const myRooms = [this.bridge.myVoiceChannel(), myRoomBefore].filter(Boolean);
+            const myRoom = !isMe && myRooms.some(id => id === prev || id === now);
+            // only people you care about: friends, My list, people in your room, and you
+            if (!isMe && !isFriend && !myRoom && !this.data.value.watchlist.includes(state.userId)) continue;
             const from = this.room(prev), to = this.room(now);
             if (!from && !to) continue;
-            const myRooms = [this.bridge.myVoiceChannel(), myRoomBefore].filter(Boolean);
             this.entries.unshift({
                 key: this.nextKey++, time: Date.now(), kind: prev && now ? "move" : now ? "join" : "leave",
                 userId: state.userId, userName: this.bridge.name(state.userId, (to ?? from).guildId), isMe,
-                isFriend: !!this.bridge.relationshipStore.isFriend?.(state.userId), from, to,
-                myRoom: !isMe && myRooms.some(id => id === prev || id === now)
+                isFriend, from, to, myRoom
             });
             added = true;
         }
         if (!added) return;
         this.entries = this.entries.slice(0, MAX_ENTRIES);
         this.onChange?.();
+        this.save();
     }
 }
