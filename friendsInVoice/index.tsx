@@ -17,6 +17,7 @@ import { classNameFactory } from "@utils/css";
 import definePlugin, { OptionType } from "@utils/types";
 import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
+import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
 import { GuardInviteCard } from "./personalGuardsCard";
 import { GuardNotificationHost } from "./personalGuardsNotice";
@@ -27,7 +28,7 @@ import type { GuardGrant, GuardInvite } from "./personalGuardsTypes";
 import { SmartReplies } from "./smartReplies";
 import { UserContextPatch } from "./userContextMenu";
 import { useVoiceData } from "./voiceContent";
-import { flushVoiceLog, loadVoiceLog, onGuildDelete, onGuildUpdate, onRelationshipAdd, onRelationshipRemove, onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
+import { flushVoiceLog, onGuildDelete, onGuildUpdate, onRelationshipAdd, onRelationshipRemove, onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
 import { LogTab, useLog } from "./voiceLogTab";
 import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voiceTabs";
 
@@ -109,6 +110,8 @@ export const settings = definePluginSettings({
     guardBlocks: { type: OptionType.CUSTOM, default: [] as { userId: string; until: number; }[] },
     guardReplay: { type: OptionType.CUSTOM, default: [] as { nonce: string; createdAt: number; }[] },
     guardPeerKeys: { type: OptionType.CUSTOM, default: [] as { userId: string; publicKey: string; }[] },
+    /** the account that kept the lists saved before they were split per account */
+    accountDataOwner: { type: OptionType.CUSTOM, default: "" },
 });
 
 // Discord's openPrivateChannel now takes { recipientIds }. Vencord's helper still passes a bare user id,
@@ -433,6 +436,10 @@ export default definePlugin({
     flux: {
         CONNECTION_OPEN() {
             startQuietPeriod();
+            void loadAccount();
+        },
+        LOGOUT() {
+            leaveAccount();
         },
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; oldChannelId?: string | null; }[]; }) {
             onVoiceStateUpdates(voiceStates);
@@ -494,7 +501,7 @@ export default definePlugin({
         seedStatuses();
         seedVoiceChannels();
         seedVoiceLog();
-        void loadVoiceLog();
+        startAccountData();
         PresenceStore.addChangeListener(onPresenceChange);
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
@@ -504,6 +511,7 @@ export default definePlugin({
     },
 
     stop() {
+        stopAccountData();
         flushVoiceLog();
         clearGuardRuntime();
         removeMessageAccessory("FriendsInVoiceSmartReplies");

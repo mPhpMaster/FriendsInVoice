@@ -30,7 +30,15 @@ module.exports = class FriendsInVoice {
             this.view.start();
             this.unsubscribers.push(installUserMenu(this.api, this.view));
             const onMessage = event => void this.guards.onMessage(event?.message).catch(error => this.api.Logger.error("Guard message failed", error));
-            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); };
+            // each Discord account has its own lists and log; Discord connects again after switching accounts
+            const loadAccount = () => {
+                const id = this.bridge.currentId();
+                void this.data.useAccount(id);
+                void this.voiceLog.useAccount(id);
+            };
+            this.data.onAccount = () => this.view.refresh();
+            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); loadAccount(); };
+            const onLogout = () => { this.data.leave(); this.voiceLog.flush(); };
             const onVoice = event => this.voiceLog.onUpdates(event?.voiceStates);
             const logEvents = {
                 RELATIONSHIP_ADD: event => this.voiceLog.onRelationshipAdd(event?.relationship),
@@ -43,12 +51,15 @@ module.exports = class FriendsInVoice {
             this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("MESSAGE_CREATE", onMessage));
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
+            this.bridge.dispatcher.subscribe("LOGOUT", onLogout);
+            this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("LOGOUT", onLogout));
             this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("VOICE_STATE_UPDATES", onVoice));
             for (const [name, handler] of Object.entries(logEvents)) {
                 this.bridge.dispatcher.subscribe(name, handler);
                 this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe(name, handler));
             }
+            loadAccount();
             this.voiceLog.seed();
             this.alerts.seed();
             this.pollTimer = setInterval(() => { this.alerts.poll(); this.view.refresh(); }, 5000);
