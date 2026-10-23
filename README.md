@@ -52,7 +52,7 @@ A history of what happens around you: when a **friend**, someone on **My list**,
 
 Everything in the log can be clicked: a **person** opens your DM with them (right-click for Discord's user menu), a **room** opens it (right-click for Discord's channel menu: join, mute, copy link…) and a **server** takes you to it (right-click for Discord's server menu). When the room or server isn't on screen in Discord's sidebar, right-click shows a short menu with the main actions instead.
 
-Each account has its own log, saved on your computer. It keeps the last 5,000 events, and shows 50 per page. People on your Hidden list aren't logged.
+Each account has its own log, saved on your computer. It keeps the last 5,000 events and shows 50 per page. People on your Hidden list aren't logged.
 
 Discord doesn't say who ended a friendship, and it never tells you when someone blocks you: both look the same as being unfriended, so the log says "unfriended, blocked, or you removed them". In the same way, losing a server is logged as "kicked, banned, or you left".
 

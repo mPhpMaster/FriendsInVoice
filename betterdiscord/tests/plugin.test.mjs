@@ -48,7 +48,7 @@ function mockApi() {
 
 test("bundle has BetterDiscord metadata, starts, patches menu, and fully stops", async () => {
     const text = await readFile(pluginFile, "utf8");
-    assert.match(text, /^\/\*\*[\s\S]*@name FriendsInVoice[\s\S]*@version 1\.13\.0/);
+    assert.match(text, /^\/\*\*[\s\S]*@name FriendsInVoice[\s\S]*@version 1\.14\.0/);
     const directory = await mkdtemp(join(tmpdir(), "friendsinvoice-bd-test-"));
     const target = join(directory, "FriendsInVoice.plugin.js");
     const dom = new JSDOM("<!doctype html><html><body></body></html>");
