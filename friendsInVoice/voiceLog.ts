@@ -4,13 +4,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { ChannelStore, RelationshipStore, SelectedChannelStore, UserStore, VoiceStateStore } from "@webpack/common";
+import * as DataStore from "@api/DataStore";
+import { ChannelStore, GuildStore, RelationshipStore, SelectedChannelStore, UserStore, VoiceStateStore } from "@webpack/common";
 
 import { settings } from ".";
 import { isQuiet } from "./notifications";
 import { describeChannel, displayName } from "./voiceContent";
 
-export type LogKind = "join" | "leave" | "move";
+export type LogKind = "join" | "leave" | "move" | "friend-request" | "friend-added" | "friend-removed" | "server-removed";
+
+/** friends and servers, not voice */
+export const ACCOUNT_KINDS: LogKind[] = ["friend-request", "friend-added", "friend-removed", "server-removed"];
 
 /** what a room looked like when the entry was written, in case it's deleted or we lose access later */
 export interface LogRoom {
@@ -35,10 +39,12 @@ export interface LogEntry {
     myRoom: boolean;
 }
 
-const MAX_ENTRIES = 500;
+export const MAX_ENTRIES = 5000;
+const STORE_KEY = "FriendsInVoice_voiceLog";
 
 let entries: LogEntry[] = [];
 let nextKey = 0;
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
 const lastChannel = new Map<string, string | null>();
 const listeners = new Set<() => void>();
 
@@ -51,6 +57,29 @@ export function getLog() {
 export function clearLog() {
     entries = [];
     emit();
+    save();
+}
+
+// kept in IndexedDB (Vencord's DataStore) so the log survives restarts; written a moment after the last change
+function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void DataStore.set(STORE_KEY, entries).catch(() => { }), 2000);
+}
+
+export async function loadVoiceLog() {
+    const saved = await DataStore.get<LogEntry[]>(STORE_KEY).catch(() => null);
+    if (!Array.isArray(saved) || !saved.length) return;
+    // anything logged while it loaded comes first
+    entries = [...entries, ...saved].slice(0, MAX_ENTRIES);
+    nextKey = Math.max(nextKey, ...entries.map(e => e.key + 1));
+    emit();
+}
+
+export function flushVoiceLog() {
+    if (saveTimer === undefined) return;
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    void DataStore.set(STORE_KEY, entries).catch(() => { });
 }
 
 export function subscribeLog(fn: () => void) {
@@ -58,13 +87,72 @@ export function subscribeLog(fn: () => void) {
     return () => void listeners.delete(fn);
 }
 
+// Discord's relationship types: https://docs.discord.com/developers/resources/user#relationship-object-relationship-type
+const FRIEND = 1, INCOMING = 3;
+const lastRelationship = new Map<string, number>();
+const guildCache = new Map<string, LogRoom>();
+
+function guildSnapshot(id: string): LogRoom | null {
+    const guild = GuildStore.getGuild(id);
+    if (!guild) return guildCache.get(id) ?? null;
+    const room = { id, guildId: id, roomName: "", place: guild.name, icon: guild.icon ? `https://cdn.discordapp.com/icons/${id}/${guild.icon}.png?size=64` : null };
+    guildCache.set(id, room);
+    return room;
+}
+
 export function seedVoiceLog() {
+    lastRelationship.clear();
+    for (const [id, type] of RelationshipStore.getMutableRelationships?.() ?? []) lastRelationship.set(id, type as number);
+    for (const id of Object.keys(GuildStore.getGuilds() ?? {})) guildSnapshot(id);
     lastChannel.clear();
     for (const states of Object.values(VoiceStateStore.getAllVoiceStates() ?? {})) {
         for (const s of Object.values(states ?? {}) as any[]) {
             if (s?.channelId) lastChannel.set(s.userId, s.channelId);
         }
     }
+}
+
+function addEntry(entry: Omit<LogEntry, "key" | "time">) {
+    entries = [{ key: nextKey++, time: Date.now(), ...entry }, ...entries].slice(0, MAX_ENTRIES);
+    emit();
+    save();
+}
+
+function personEntry(userId: string, kind: LogKind, user?: any) {
+    user ??= UserStore.getUser(userId);
+    if (settings.store.hidden.includes(userId)) return;
+    addEntry({
+        kind, userId, userName: user ? displayName(user, null) : "Unknown user", isMe: false,
+        isFriend: RelationshipStore.isFriend(userId), from: null, to: null, myRoom: false,
+    });
+}
+
+export function onRelationshipAdd(relationship: { id: string; type: number; user?: any; }) {
+    const before = lastRelationship.get(relationship.id);
+    lastRelationship.set(relationship.id, relationship.type);
+    if (isQuiet() || before === relationship.type) return;
+    if (relationship.type === INCOMING) personEntry(relationship.id, "friend-request", relationship.user);
+    else if (relationship.type === FRIEND) personEntry(relationship.id, "friend-added", relationship.user);
+}
+
+// Discord doesn't say who ended a friendship, and being blocked looks the same as being unfriended
+export function onRelationshipRemove(relationship: { id: string; type?: number; }) {
+    const before = lastRelationship.get(relationship.id) ?? relationship.type;
+    lastRelationship.delete(relationship.id);
+    if (!isQuiet() && before === FRIEND) personEntry(relationship.id, "friend-removed");
+}
+
+export function onGuildUpdate(guildId: string) {
+    guildSnapshot(guildId);
+}
+
+// GUILD_DELETE also fires during a Discord outage (unavailable: true); that isn't losing the server
+export function onGuildDelete(guild: { id: string; unavailable?: boolean; }) {
+    if (guild.unavailable || isQuiet()) return;
+    const server = guildSnapshot(guild.id);
+    const me = UserStore.getCurrentUser();
+    if (!server || !me) return;
+    addEntry({ kind: "server-removed", userId: me.id, userName: displayName(me, null), isMe: true, isFriend: false, from: server, to: null, myRoom: false });
 }
 
 function snapshot(channelId: string | null): LogRoom | null {
@@ -89,12 +177,16 @@ export function onVoiceLogUpdates(voiceStates: { userId: string; guildId?: strin
         if (prev === now || isQuiet()) continue;
         const isMe = s.userId === myId;
         if (!isMe && settings.store.hidden.includes(s.userId)) continue;
+        const isFriend = RelationshipStore.isFriend(s.userId);
+        const myRooms = [SelectedChannelStore.getVoiceChannelId(), myRoomBefore].filter(Boolean);
+        const myRoom = !isMe && myRooms.some(id => id === prev || id === now);
+        // only people you care about: friends, My list, people in your room, and you
+        if (!isMe && !isFriend && !myRoom && !settings.store.watchlist.includes(s.userId)) continue;
 
         const from = snapshot(prev);
         const to = snapshot(now);
         if (!from && !to) continue;
 
-        const myRooms = [SelectedChannelStore.getVoiceChannelId(), myRoomBefore].filter(Boolean);
         const user = UserStore.getUser(s.userId);
         entries.unshift({
             key: nextKey++,
@@ -103,16 +195,16 @@ export function onVoiceLogUpdates(voiceStates: { userId: string; guildId?: strin
             userId: s.userId,
             userName: user ? displayName(user, (to ?? from)?.guildId ?? null) : "Unknown user",
             isMe,
-            isFriend: RelationshipStore.isFriend(s.userId),
+            isFriend,
             from,
             to,
-            myRoom: !isMe && myRooms.some(id => id === prev || id === now),
+            myRoom,
         });
         added = true;
     }
 
     if (!added) return;
-    if (entries.length > MAX_ENTRIES) entries = entries.slice(0, MAX_ENTRIES);
-    else entries = [...entries];
+    entries = entries.slice(0, MAX_ENTRIES);
     emit();
+    save();
 }

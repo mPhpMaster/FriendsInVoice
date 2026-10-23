@@ -1609,6 +1609,8 @@ var STYLE = `
 .fivbd-log-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 12px;line-height:1.5}.fivbd-log-row+.fivbd-log-row{border-top:1px solid var(--border-subtle)}
 .fivbd-log-myroom{box-shadow:inset 3px 0 0 #f0b232}.fivbd-log-what{flex:1 1 auto;min-width:0}
 .fivbd-log-link{font-weight:600;cursor:pointer}.fivbd-log-link:hover{text-decoration:underline}.fivbd-log-place{font-weight:600}
+.fivbd-log-select,.fivbd-log-date input{padding:5px 8px;border-radius:7px;border:1px solid var(--border-subtle);background:var(--input-background);color:var(--text-normal);color-scheme:dark}
+.fivbd-log-select{max-width:220px}.fivbd-log-date{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
 .fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
@@ -1792,9 +1794,151 @@ function renderListTab(parent, view, tab) {
   for (const definition of definitions) renderSection(parent, view, definition);
 }
 
+// src/voiceLog.js
+var MAX_ENTRIES = 5e3;
+var ACCOUNT_KINDS = ["friend-request", "friend-added", "friend-removed", "server-removed"];
+var FRIEND = 1;
+var INCOMING = 3;
+var STORE_KEY = "voiceLog";
+var VoiceLog = class {
+  constructor(bridge, data, api) {
+    this.bridge = bridge;
+    this.data = data;
+    this.api = api;
+    const saved = api?.Data?.load?.(STORE_KEY);
+    this.entries = Array.isArray(saved) ? saved.filter((entry) => entry?.userId && (entry.from || entry.to)).slice(0, MAX_ENTRIES) : [];
+    this.lastChannel = /* @__PURE__ */ new Map();
+    this.nextKey = Math.max(0, ...this.entries.map((entry) => (entry.key ?? 0) + 1));
+    this.quietUntil = Date.now() + 15e3;
+    this.onChange = null;
+    this.lastRelationship = /* @__PURE__ */ new Map();
+    this.guildCache = /* @__PURE__ */ new Map();
+  }
+  guild(id) {
+    const guild = this.bridge.guildStore?.getGuild?.(id);
+    if (!guild) return this.guildCache.get(id) ?? null;
+    const room2 = { id, guildId: id, roomName: "", place: guild.name };
+    this.guildCache.set(id, room2);
+    return room2;
+  }
+  seed() {
+    this.lastRelationship.clear();
+    for (const [id, type] of this.bridge.relationshipStore.getMutableRelationships?.() ?? []) this.lastRelationship.set(id, type);
+    for (const id of Object.keys(this.bridge.guildStore?.getGuilds?.() ?? {})) this.guild(id);
+    this.lastChannel.clear();
+    for (const states of Object.values(this.bridge.voiceStore.getAllVoiceStates?.() ?? {}))
+      for (const state of Object.values(states ?? {})) if (state?.channelId) this.lastChannel.set(state.userId, state.channelId);
+  }
+  // after (re)connecting Discord sends voice states in bulk; don't log those, and re-read where everyone is once settled
+  reconnect() {
+    this.quietUntil = Date.now() + 15e3;
+    clearTimeout(this.reseedTimer);
+    this.reseedTimer = setTimeout(() => this.seed(), 15e3);
+  }
+  stop() {
+    clearTimeout(this.reseedTimer);
+    if (this.saveTimer) this.flush();
+  }
+  // written a few seconds after the last change, not on every event
+  save() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.flush(), 5e3);
+  }
+  flush() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    try {
+      this.api?.Data?.save?.(STORE_KEY, this.entries);
+    } catch {
+    }
+  }
+  clear() {
+    this.entries = [];
+    this.onChange?.();
+    this.flush();
+  }
+  add(entry) {
+    this.entries = [{ key: this.nextKey++, time: Date.now(), from: null, to: null, myRoom: false, ...entry }, ...this.entries].slice(0, MAX_ENTRIES);
+    this.onChange?.();
+    this.save();
+  }
+  person(userId, kind) {
+    if (this.data.value.hidden.includes(userId)) return;
+    this.add({ kind, userId, userName: this.bridge.name(userId), isMe: false, isFriend: !!this.bridge.relationshipStore.isFriend?.(userId) });
+  }
+  onRelationshipAdd(relationship) {
+    if (!relationship?.id) return;
+    const before = this.lastRelationship.get(relationship.id);
+    this.lastRelationship.set(relationship.id, relationship.type);
+    if (Date.now() < this.quietUntil || before === relationship.type) return;
+    if (relationship.type === INCOMING) this.person(relationship.id, "friend-request");
+    else if (relationship.type === FRIEND) this.person(relationship.id, "friend-added");
+  }
+  // Discord doesn't say who ended a friendship, and being blocked looks the same as being unfriended
+  onRelationshipRemove(relationship) {
+    if (!relationship?.id) return;
+    const before = this.lastRelationship.get(relationship.id) ?? relationship.type;
+    this.lastRelationship.delete(relationship.id);
+    if (Date.now() >= this.quietUntil && before === FRIEND) this.person(relationship.id, "friend-removed");
+  }
+  // GUILD_DELETE also fires during a Discord outage (unavailable: true); that isn't losing the server
+  onGuildDelete(guild) {
+    if (!guild?.id || guild.unavailable || Date.now() < this.quietUntil) return;
+    const server = this.guild(guild.id), me = this.bridge.currentId();
+    if (server && me) this.add({ kind: "server-removed", userId: me, userName: this.bridge.name(me), isMe: true, isFriend: false, from: server });
+  }
+  room(channelId) {
+    const channel = channelId && this.bridge.channel(channelId);
+    return channel ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
+  }
+  onUpdates(voiceStates = []) {
+    const me = this.bridge.currentId();
+    const myRoomBefore = me ? this.lastChannel.get(me) ?? null : null;
+    let added = false;
+    for (const state of voiceStates) {
+      if (!state?.userId) continue;
+      const now = state.channelId ?? null;
+      const prev = this.lastChannel.has(state.userId) ? this.lastChannel.get(state.userId) : state.oldChannelId ?? null;
+      this.lastChannel.set(state.userId, now);
+      if (prev === now || Date.now() < this.quietUntil) continue;
+      const isMe = state.userId === me;
+      if (!isMe && this.data.value.hidden.includes(state.userId)) continue;
+      const isFriend = !!this.bridge.relationshipStore.isFriend?.(state.userId);
+      const myRooms = [this.bridge.myVoiceChannel(), myRoomBefore].filter(Boolean);
+      const myRoom = !isMe && myRooms.some((id) => id === prev || id === now);
+      if (!isMe && !isFriend && !myRoom && !this.data.value.watchlist.includes(state.userId)) continue;
+      const from = this.room(prev), to = this.room(now);
+      if (!from && !to) continue;
+      this.entries.unshift({
+        key: this.nextKey++,
+        time: Date.now(),
+        kind: prev && now ? "move" : now ? "join" : "leave",
+        userId: state.userId,
+        userName: this.bridge.name(state.userId, (to ?? from).guildId),
+        isMe,
+        isFriend,
+        from,
+        to,
+        myRoom
+      });
+      added = true;
+    }
+    if (!added) return;
+    this.entries = this.entries.slice(0, MAX_ENTRIES);
+    this.onChange?.();
+    this.save();
+  }
+};
+
 // src/viewLog.js
-var FILTERS = [["all", "Everything"], ["friends", "Friends"], ["myroom", "My room"], ["me", "Me"]];
-var ICONS = { join: "\u27A1\uFE0F", leave: "\u2B05\uFE0F", move: "\u{1F500}" };
+var FILTERS = [["friends", "Friends"], ["mylist", "My list"], ["myroom", "My room"], ["me", "Me"], ["account", "Friends & servers"]];
+var PAGE_SIZE = 50;
+var ICONS = { join: "\u27A1\uFE0F", leave: "\u2B05\uFE0F", move: "\u{1F500}", "friend-request": "\u{1F4E8}", "friend-added": "\u{1F91D}", "friend-removed": "\u{1F494}", "server-removed": "\u{1F6AA}" };
+function formatTime(time) {
+  const date = new Date(time);
+  const clock = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return date.toDateString() === (/* @__PURE__ */ new Date()).toDateString() ? clock : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${clock}`;
+}
 function openSidebarMenu(listItemId, event) {
   const target = document.querySelector(`[data-list-item-id="${listItemId}"]`);
   if (!target) return false;
@@ -1879,20 +2023,64 @@ function place(view, info) {
 var where = (view, info) => [room(view, info), document.createTextNode(" in "), place(view, info)];
 function describe(view, entry) {
   const { from, to } = entry;
+  if (entry.kind === "friend-request") return ["sent you a friend request"];
+  if (entry.kind === "friend-added") return ["is now your friend"];
+  if (entry.kind === "friend-removed") return ["is no longer your friend ", element("span", "fivbd-muted", "(unfriended, blocked, or you removed them)")];
+  if (entry.kind === "server-removed") return ["are no longer in ", element("b", "", from?.place ?? "a server"), " ", element("span", "fivbd-muted", "(kicked, banned, or you left)")];
   if (entry.kind === "join") return ["joined ", ...where(view, to)];
   if (entry.kind === "leave") return ["left ", ...where(view, from)];
   if (from.guildId === to.guildId) return ["moved from ", room(view, from), " to ", room(view, to), " in ", place(view, to)];
   return ["moved from ", ...where(view, from), " to ", ...where(view, to)];
 }
-function matches(entry, filter, query) {
+function matches(entry, filter, query, watchlist) {
+  if (filter === "account" !== ACCOUNT_KINDS.includes(entry.kind)) return false;
   if (filter === "friends" && !entry.isFriend) return false;
+  if (filter === "mylist" && !watchlist.includes(entry.userId)) return false;
   if (filter === "myroom" && !entry.myRoom) return false;
   if (filter === "me" && !entry.isMe) return false;
   return !query || [entry.userName, entry.from?.roomName, entry.from?.place, entry.to?.roomName, entry.to?.place].some((text) => text?.toLowerCase().includes(query));
 }
+var serversOf = (entry) => [entry.from, entry.to].filter((room2) => room2?.guildId);
+var parseLocal = (value) => value ? new Date(value).getTime() : NaN;
+var byName = (a, b) => a[1].localeCompare(b[1]);
+function narrowLog(entries, { filter, query = "", watchlist = [], server = "", person: person2 = "", since = "", until = "" }) {
+  const inFilter = entries.filter((entry) => matches(entry, filter, query, watchlist));
+  const servers = /* @__PURE__ */ new Map(), people = /* @__PURE__ */ new Map();
+  for (const entry of inFilter) {
+    for (const room2 of serversOf(entry)) servers.set(room2.guildId, room2.place);
+    if (!entry.isMe) people.set(entry.userId, entry.userName);
+  }
+  const pickedServer = servers.has(server) ? server : "", pickedPerson = people.has(person2) ? person2 : "";
+  const from = parseLocal(since), to = parseLocal(until);
+  const shown = inFilter.filter((entry) => (!pickedServer || serversOf(entry).some((room2) => room2.guildId === pickedServer)) && (!pickedPerson || entry.userId === pickedPerson) && !(entry.time < from) && !(entry.time > to));
+  return { shown, servers: [...servers].sort(byName), people: [...people].sort(byName), pickedServer, pickedPerson };
+}
+function picker(all, onChange) {
+  const select = element("select", "fivbd-log-select");
+  select.addEventListener("change", () => onChange(select.value));
+  select.fill = (options, value) => {
+    select.replaceChildren(new Option(all, ""), ...options.map(([id, label]) => new Option(label, id)));
+    select.value = value;
+  };
+  return select;
+}
+function dateInput(label, key, view, update) {
+  const wrap = element("label", "fivbd-log-date", `${label} `);
+  const input = element("input");
+  input.type = "datetime-local";
+  input.value = view[key] ?? "";
+  input.addEventListener("change", () => {
+    view[key] = input.value;
+    view.logPage = 0;
+    update();
+  });
+  wrap.append(input);
+  return wrap;
+}
 function renderLogTab(parent, view) {
   const log = view.voiceLog;
-  view.logFilter ??= "all";
+  if (!FILTERS.some(([id]) => id === view.logFilter)) view.logFilter = "friends";
+  view.logPage ??= 0;
   const input = element("input", "fivbd-search");
   input.type = "search";
   input.placeholder = "Search people, servers, or voice rooms\u2026";
@@ -1901,24 +2089,72 @@ function renderLogTab(parent, view) {
   for (const [id, title] of FILTERS)
     filters.append(button(title, () => {
       view.logFilter = id;
+      view.logPage = 0;
       view.render();
     }, id === view.logFilter ? "active" : ""));
   if (log.entries.length) filters.append(button("Clear", () => {
     log.clear();
+    view.logPage = 0;
     view.render();
   }));
   const list = element("div", "fivbd-log");
+  const pager = element("div", "fivbd-actions");
+  const pick2 = (key) => (value) => {
+    view[key] = value;
+    view.logPage = 0;
+    update();
+  };
+  const serverPicker = picker("All servers", pick2("logServer")), personPicker = picker("All people", pick2("logPerson"));
+  const narrow = element("div", "fivbd-actions");
+  add(
+    narrow,
+    serverPicker,
+    personPicker,
+    dateInput("From", "logSince", view, update),
+    dateInput("To", "logUntil", view, update),
+    button("Reset", () => {
+      view.logServer = view.logPerson = view.logSince = view.logUntil = "";
+      view.logPage = 0;
+      view.render();
+    })
+  );
   function update() {
     const query = input.value.trim().toLowerCase();
-    const shown = log.entries.filter((entry) => matches(entry, view.logFilter, query));
+    const { shown, servers, people, pickedServer, pickedPerson } = narrowLog(log.entries, {
+      filter: view.logFilter,
+      query,
+      watchlist: view.data.value.watchlist,
+      server: view.logServer,
+      person: view.logPerson,
+      since: view.logSince,
+      until: view.logUntil
+    });
+    serverPicker.fill(servers, pickedServer);
+    personPicker.fill(people, pickedPerson);
+    const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+    view.logPage = Math.min(view.logPage, pages - 1);
     list.replaceChildren();
+    pager.replaceChildren();
+    if (pages > 1) {
+      const newer = button("\u2039 Newer", () => {
+        view.logPage--;
+        update();
+      });
+      const older = button("Older \u203A", () => {
+        view.logPage++;
+        update();
+      });
+      newer.disabled = view.logPage === 0;
+      older.disabled = view.logPage === pages - 1;
+      add(pager, newer, element("span", "fivbd-muted", `Page ${view.logPage + 1} of ${pages} \xB7 ${shown.length} events`), older);
+    }
     if (!shown.length) {
-      list.append(paragraph(log.entries.length ? "Nothing matches." : "Nothing yet. Every time someone joins, leaves or moves between voice rooms in your servers, it shows up here, including people coming into and leaving your own room.", "fivbd-empty"));
+      list.append(paragraph(log.entries.length ? "Nothing matches." : "Nothing yet. Every time a friend, someone on My list, or someone in your room joins, leaves or moves between voice rooms, it shows up here.", "fivbd-empty"));
       return;
     }
-    for (const entry of shown) {
+    for (const entry of shown.slice(view.logPage * PAGE_SIZE, (view.logPage + 1) * PAGE_SIZE)) {
       const row = element("div", `fivbd-log-row${entry.myRoom ? " fivbd-log-myroom" : ""}`);
-      const time = element("span", "fivbd-muted", new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      const time = element("span", "fivbd-muted", formatTime(entry.time));
       time.title = new Date(entry.time).toLocaleString();
       add(row, time, element("span", "", ICONS[entry.kind]), person(view, entry));
       const what = element("span", "fivbd-log-what");
@@ -1929,8 +2165,11 @@ function renderLogTab(parent, view) {
       list.append(row);
     }
   }
-  input.addEventListener("input", update);
-  add(parent, input, filters, list, paragraph("Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log keeps the last 500 events until you restart Discord.", "fivbd-muted"));
+  input.addEventListener("input", () => {
+    view.logPage = 0;
+    update();
+  });
+  add(parent, input, filters, narrow, list, pager, paragraph(`Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log is saved on this computer and keeps the last ${MAX_ENTRIES.toLocaleString()} events.`, "fivbd-muted"));
   update();
 }
 
@@ -2144,75 +2383,6 @@ var Dashboard = class {
   }
 };
 
-// src/voiceLog.js
-var MAX_ENTRIES = 500;
-var VoiceLog = class {
-  constructor(bridge, data) {
-    this.bridge = bridge;
-    this.data = data;
-    this.entries = [];
-    this.lastChannel = /* @__PURE__ */ new Map();
-    this.nextKey = 0;
-    this.quietUntil = Date.now() + 15e3;
-    this.onChange = null;
-  }
-  seed() {
-    this.lastChannel.clear();
-    for (const states of Object.values(this.bridge.voiceStore.getAllVoiceStates?.() ?? {}))
-      for (const state of Object.values(states ?? {})) if (state?.channelId) this.lastChannel.set(state.userId, state.channelId);
-  }
-  // after (re)connecting Discord sends voice states in bulk; don't log those, and re-read where everyone is once settled
-  reconnect() {
-    this.quietUntil = Date.now() + 15e3;
-    clearTimeout(this.reseedTimer);
-    this.reseedTimer = setTimeout(() => this.seed(), 15e3);
-  }
-  stop() {
-    clearTimeout(this.reseedTimer);
-  }
-  clear() {
-    this.entries = [];
-    this.onChange?.();
-  }
-  room(channelId) {
-    const channel = channelId && this.bridge.channel(channelId);
-    return channel ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
-  }
-  onUpdates(voiceStates = []) {
-    const me = this.bridge.currentId();
-    const myRoomBefore = me ? this.lastChannel.get(me) ?? null : null;
-    let added = false;
-    for (const state of voiceStates) {
-      if (!state?.userId) continue;
-      const now = state.channelId ?? null;
-      const prev = this.lastChannel.has(state.userId) ? this.lastChannel.get(state.userId) : state.oldChannelId ?? null;
-      this.lastChannel.set(state.userId, now);
-      if (prev === now || Date.now() < this.quietUntil) continue;
-      const isMe = state.userId === me;
-      if (!isMe && this.data.value.hidden.includes(state.userId)) continue;
-      const from = this.room(prev), to = this.room(now);
-      if (!from && !to) continue;
-      const myRooms = [this.bridge.myVoiceChannel(), myRoomBefore].filter(Boolean);
-      this.entries.unshift({
-        key: this.nextKey++,
-        time: Date.now(),
-        kind: prev && now ? "move" : now ? "join" : "leave",
-        userId: state.userId,
-        userName: this.bridge.name(state.userId, (to ?? from).guildId),
-        isMe,
-        isFriend: !!this.bridge.relationshipStore.isFriend?.(state.userId),
-        from,
-        to,
-        myRoom: !isMe && myRooms.some((id) => id === prev || id === now)
-      });
-      added = true;
-    }
-    if (!added) return;
-    this.entries = this.entries.slice(0, MAX_ENTRIES);
-    this.onChange?.();
-  }
-};
-
 // src/index.cjs
 module.exports = class FriendsInVoice {
   constructor(meta) {
@@ -2230,7 +2400,7 @@ module.exports = class FriendsInVoice {
       this.guards = new GuardService(this.api, this.bridge, this.data, (tab) => this.view.open(tab));
       this.replies = new ReplyService(this.api, this.bridge, this.data);
       this.alerts = new AlertService(this.api, this.bridge, this.data, (tab) => this.view.open(tab), this.version);
-      this.voiceLog = new VoiceLog(this.bridge, this.data);
+      this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
       this.voiceLog.onChange = () => {
         if (this.view.tab === "log") this.view.refresh();
       };
@@ -2243,12 +2413,23 @@ module.exports = class FriendsInVoice {
         this.voiceLog.reconnect();
       };
       const onVoice = (event) => this.voiceLog.onUpdates(event?.voiceStates);
+      const logEvents = {
+        RELATIONSHIP_ADD: (event) => this.voiceLog.onRelationshipAdd(event?.relationship),
+        RELATIONSHIP_REMOVE: (event) => this.voiceLog.onRelationshipRemove(event?.relationship),
+        GUILD_CREATE: (event) => event?.guild?.id && this.voiceLog.guild(event.guild.id),
+        GUILD_UPDATE: (event) => event?.guild?.id && this.voiceLog.guild(event.guild.id),
+        GUILD_DELETE: (event) => this.voiceLog.onGuildDelete(event?.guild)
+      };
       this.bridge.dispatcher.subscribe("MESSAGE_CREATE", onMessage);
       this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("MESSAGE_CREATE", onMessage));
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
       this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("VOICE_STATE_UPDATES", onVoice));
+      for (const [name, handler] of Object.entries(logEvents)) {
+        this.bridge.dispatcher.subscribe(name, handler);
+        this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe(name, handler));
+      }
       this.voiceLog.seed();
       this.alerts.seed();
       this.pollTimer = setInterval(() => {
