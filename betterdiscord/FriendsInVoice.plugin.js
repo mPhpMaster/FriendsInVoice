@@ -1677,6 +1677,8 @@ var STYLE = `
 .fivbd-log-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 12px;line-height:1.5}.fivbd-log-row+.fivbd-log-row{border-top:1px solid var(--border-subtle)}
 .fivbd-log-myroom{box-shadow:inset 3px 0 0 #f0b232}.fivbd-log-what{flex:1 1 auto;min-width:0}
 .fivbd-log-link{font-weight:600;cursor:pointer}.fivbd-log-link:hover{text-decoration:underline}.fivbd-log-place{font-weight:600}
+.fivbd-log-select,.fivbd-log-date input{padding:5px 8px;border-radius:7px;border:1px solid var(--border-subtle);background:var(--input-background);color:var(--text-normal);color-scheme:dark}
+.fivbd-log-select{max-width:220px}.fivbd-log-date{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
 .fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
@@ -2127,6 +2129,43 @@ function matches(entry, filter, query, watchlist) {
   if (filter === "me" && !entry.isMe) return false;
   return !query || [entry.userName, entry.from?.roomName, entry.from?.place, entry.to?.roomName, entry.to?.place].some((text) => text?.toLowerCase().includes(query));
 }
+var serversOf = (entry) => [entry.from, entry.to].filter((room2) => room2?.guildId);
+var parseLocal = (value) => value ? new Date(value).getTime() : NaN;
+var byName = (a, b) => a[1].localeCompare(b[1]);
+function narrowLog(entries, { filter, query = "", watchlist = [], server = "", person: person2 = "", since = "", until = "" }) {
+  const inFilter = entries.filter((entry) => matches(entry, filter, query, watchlist));
+  const servers = /* @__PURE__ */ new Map(), people = /* @__PURE__ */ new Map();
+  for (const entry of inFilter) {
+    for (const room2 of serversOf(entry)) servers.set(room2.guildId, room2.place);
+    if (!entry.isMe) people.set(entry.userId, entry.userName);
+  }
+  const pickedServer = servers.has(server) ? server : "", pickedPerson = people.has(person2) ? person2 : "";
+  const from = parseLocal(since), to = parseLocal(until);
+  const shown = inFilter.filter((entry) => (!pickedServer || serversOf(entry).some((room2) => room2.guildId === pickedServer)) && (!pickedPerson || entry.userId === pickedPerson) && !(entry.time < from) && !(entry.time > to));
+  return { shown, servers: [...servers].sort(byName), people: [...people].sort(byName), pickedServer, pickedPerson };
+}
+function picker(all, onChange) {
+  const select = element("select", "fivbd-log-select");
+  select.addEventListener("change", () => onChange(select.value));
+  select.fill = (options, value) => {
+    select.replaceChildren(new Option(all, ""), ...options.map(([id, label]) => new Option(label, id)));
+    select.value = value;
+  };
+  return select;
+}
+function dateInput(label, key, view, update) {
+  const wrap = element("label", "fivbd-log-date", `${label} `);
+  const input = element("input");
+  input.type = "datetime-local";
+  input.value = view[key] ?? "";
+  input.addEventListener("change", () => {
+    view[key] = input.value;
+    view.logPage = 0;
+    update();
+  });
+  wrap.append(input);
+  return wrap;
+}
 function renderLogTab(parent, view) {
   const log = view.voiceLog;
   if (!FILTERS.some(([id]) => id === view.logFilter)) view.logFilter = "friends";
@@ -2149,9 +2188,38 @@ function renderLogTab(parent, view) {
   }));
   const list = element("div", "fivbd-log");
   const pager = element("div", "fivbd-actions");
+  const pick3 = (key) => (value) => {
+    view[key] = value;
+    view.logPage = 0;
+    update();
+  };
+  const serverPicker = picker("All servers", pick3("logServer")), personPicker = picker("All people", pick3("logPerson"));
+  const narrow = element("div", "fivbd-actions");
+  add(
+    narrow,
+    serverPicker,
+    personPicker,
+    dateInput("From", "logSince", view, update),
+    dateInput("To", "logUntil", view, update),
+    button("Reset", () => {
+      view.logServer = view.logPerson = view.logSince = view.logUntil = "";
+      view.logPage = 0;
+      view.render();
+    })
+  );
   function update() {
     const query = input.value.trim().toLowerCase();
-    const shown = log.entries.filter((entry) => matches(entry, view.logFilter, query, view.data.value.watchlist));
+    const { shown, servers, people, pickedServer, pickedPerson } = narrowLog(log.entries, {
+      filter: view.logFilter,
+      query,
+      watchlist: view.data.value.watchlist,
+      server: view.logServer,
+      person: view.logPerson,
+      since: view.logSince,
+      until: view.logUntil
+    });
+    serverPicker.fill(servers, pickedServer);
+    personPicker.fill(people, pickedPerson);
     const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
     view.logPage = Math.min(view.logPage, pages - 1);
     list.replaceChildren();
@@ -2190,7 +2258,7 @@ function renderLogTab(parent, view) {
     view.logPage = 0;
     update();
   });
-  add(parent, input, filters, list, pager, paragraph(`Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log is saved on this computer and keeps the last ${MAX_ENTRIES.toLocaleString()} events.`, "fivbd-muted"));
+  add(parent, input, filters, narrow, list, pager, paragraph(`Click a person to message them, a room to open it, or a server to go to it. Right-click any of them for options. The log is saved on this computer and keeps the last ${MAX_ENTRIES.toLocaleString()} events.`, "fivbd-muted"));
   update();
 }
 
