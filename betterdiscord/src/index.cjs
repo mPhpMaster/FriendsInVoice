@@ -1,4 +1,5 @@
 import { AlertService } from "./alerts.js";
+import { AutoStatus } from "./autoStatus.js";
 import { DataStore } from "./data.js";
 import { DiscordBridge } from "./discord.js";
 import { GuardService } from "./guards.js";
@@ -27,8 +28,9 @@ module.exports = class FriendsInVoice {
             this.alerts = new AlertService(this.api, this.bridge, this.data, tab => this.view.open(tab), this.version);
             this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
             this.whatsNew = new WhatsNew(this.api, this.data, this.version);
+            this.autoStatus = new AutoStatus(this.api, this.bridge, this.data);
             this.voiceLog.onChange = () => { if (this.view.tab === "log") this.view.refresh(); };
-            Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog });
+            Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus });
             this.view.start();
             this.unsubscribers.push(installUserMenu(this.api, this.view));
             const onMessage = event => void this.guards.onMessage(event?.message).catch(error => this.api.Logger.error("Guard message failed", error));
@@ -40,9 +42,9 @@ module.exports = class FriendsInVoice {
             };
             this.data.onAccount = () => this.view.refresh();
             const showWhatsNew = () => { this.whatsNewTimer = setTimeout(() => void this.whatsNew.check(), 3000); };
-            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); loadAccount(); showWhatsNew(); };
+            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); loadAccount(); showWhatsNew(); this.autoStatus.apply(); };
             const onLogout = () => { this.data.leave(); this.voiceLog.flush(); };
-            const onVoice = event => this.voiceLog.onUpdates(event?.voiceStates);
+            const onVoice = event => { this.voiceLog.onUpdates(event?.voiceStates); this.autoStatus.onUpdates(event?.voiceStates); };
             const logEvents = {
                 RELATIONSHIP_ADD: event => this.voiceLog.onRelationshipAdd(event?.relationship),
                 RELATIONSHIP_REMOVE: event => this.voiceLog.onRelationshipRemove(event?.relationship),
@@ -65,6 +67,7 @@ module.exports = class FriendsInVoice {
             loadAccount();
             this.voiceLog.seed();
             this.alerts.seed();
+            this.autoStatus.apply();
             this.pollTimer = setInterval(() => { this.alerts.poll(); this.view.refresh(); }, 5000);
             this.updateTimer = setInterval(() => void this.alerts.checkUpdate(), 6 * 60 * 60 * 1000);
             this.started = true;
