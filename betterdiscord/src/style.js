@@ -8,7 +8,7 @@ export const STYLE = `
 .fivbd-panel button,.fivbd-setting button{cursor:pointer;padding:6px 10px;border-radius:7px;border:1px solid var(--border-subtle);background:var(--background-secondary);color:var(--text-normal)}
 .fivbd-panel button:disabled{cursor:not-allowed;opacity:.5}.fivbd-panel button:hover:not(:disabled){background:var(--background-mod-strong)}
 .fivbd-panel .active{background:var(--brand-500);color:white}.fivbd-panel .danger{color:var(--status-danger,#f23f43)}
-.fivbd-search,.fivbd-setting input{box-sizing:border-box;width:100%;max-width:440px;padding:8px;margin:0 0 14px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--input-background);color:var(--text-normal)}
+.fivbd-search,.fivbd-setting input,.fivbd-setting select{box-sizing:border-box;width:100%;max-width:440px;padding:8px;margin:0 0 14px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--input-background);color:var(--text-normal)}
 .fivbd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:12px 0 20px}
 .fivbd-card{padding:13px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--background-secondary)}
 .fivbd-card h3{margin:0 0 7px;font-size:15px}.fivbd-card p{margin:5px 0;color:var(--text-muted)}

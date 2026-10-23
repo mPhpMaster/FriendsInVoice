@@ -90,6 +90,16 @@ Right-click **yourself** (your name in a voice room, the member list or a messag
 Both are off by default. After changing one, click the notification (or **Reload Discord to apply** in the same menu) to reload Discord. If Vencord's own **DisableCallIdle** or **CustomIdle** plugin is already on, the matching switch shows as handled by it.
 
 These don't stop a server's own bots or rules from kicking inactive people, and you'll still disconnect if your internet drops or the PC goes to sleep.
+### 👻 Auto switch status
+
+Turn on **Auto switch status** (in the plugin settings, or right-click yourself → **Auto switch status in calls**) and your status changes by itself:
+
+| You are… | Your status becomes |
+|---|---|
+| In a voice channel, DM call or group call | **Online** *(changeable)* |
+| Not in any call | **Invisible** *(changeable)* |
+
+It switches the moment you join, leave or move between calls, and checks again when Discord starts. Pick both statuses (Online, Idle, Do Not Disturb or Invisible) in the plugin settings, for example *Do Not Disturb* in calls and *Online* otherwise. It's off by default; turning it off leaves your status as it is.
 ### Updates
 
 The plugin checks GitHub for new releases (at startup and every 6 hours). On Windows and macOS, click the new-version notification to download the package from this repository's GitHub Release, verify its SHA-256 digest, install the plugin source, build Vencord, and restart Discord. Your plugin settings and other plugins stay in place. A failed build restores the previous source and tries to rebuild it. Linux users can use the manual update steps below. You can also click **Check for updates** at the bottom of the page. The check can be turned off in the plugin settings. Versions before v1.9.0 need one manual update to gain one-click updating.

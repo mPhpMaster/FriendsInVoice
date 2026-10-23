@@ -4,11 +4,13 @@ export const LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "
 /** saved per Discord account; everything else is shared by every account on this computer */
 export const ACCOUNT_KEYS = [...LISTS, "personalGuards", "knownGuardGrants", "guardPeerKeys", "guardBlocks", "guardReplay"];
 export const ACTIONS = ["mute", "deafen", "disconnect"];
+export const STATUSES = ["online", "idle", "dnd", "invisible"];
 
 const DEFAULTS = {
     watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [], hidden: [],
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
     anthropicApiKey: "", aiModel: "claude-opus-5-5", checkForUpdates: true, showWhatsNew: true,
+    autoStatus: false, statusInCall: "online", statusOutsideCall: "invisible",
     personalGuards: [], knownGuardGrants: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
 };
 export const isId = value => typeof value === "string" && /^\d{17,20}$/.test(value);
@@ -18,10 +20,12 @@ export function normalizeData(raw) {
     const source = raw && typeof raw === "object" ? raw : {};
     const data = { ...DEFAULTS };
     for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-    for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew"])
+    for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus"])
         if (typeof source[key] === "boolean") data[key] = source[key];
     for (const key of ["anthropicApiKey", "aiModel"])
         if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
+    for (const key of ["statusInCall", "statusOutsideCall"])
+        if (STATUSES.includes(source[key])) data[key] = source[key];
     for (const key of ["personalGuards", "knownGuardGrants"])
         data[key] = Array.isArray(source[key]) ? source[key].filter(item => isId(item?.userId) && Array.isArray(item.actions))
             .map(item => ({ userId: item.userId, actions: ACTIONS.filter(action => item.actions.includes(action)) })) : [];
