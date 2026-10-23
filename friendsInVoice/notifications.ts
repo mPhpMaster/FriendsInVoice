@@ -15,7 +15,7 @@ import { isNewer } from "./updateVersion";
 import { describeChannel, displayName } from "./voiceContent";
 import { seedVoiceLog } from "./voiceLog";
 const StatusSettings = getUserSettingLazy<string>("status", "status")!;
-const VERSION = "1.14.1";
+const VERSION = "1.15.0";
 const REPO = "mPhpMaster/FriendsInVoice";// ---------- lists ----------
 const UpdateNative = VencordNative.pluginHelpers.FriendsInVoice as PluginNative<typeof import("./native")>;
 
