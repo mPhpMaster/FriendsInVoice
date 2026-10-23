@@ -22,5 +22,11 @@ export const STYLE = `
 .fivbd-log-select{max-width:220px}.fivbd-log-date{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
 .fivbd-log-pill{padding:0 6px;border-radius:4px;font-size:11px;font-weight:700;background:var(--background-mod-strong)}
 .fivbd-empty{padding:20px;text-align:center;color:var(--text-muted)}.fivbd-setting{display:flex;flex-direction:column;gap:12px;padding:12px;color:var(--text-normal)}
+.fivbd-whats-new{width:min(640px,100%)}.fivbd-whats-new .fivbd-body{min-height:0;line-height:1.45;user-select:text}
+.fivbd-whats-new-release h3{display:flex;align-items:center;gap:10px;margin:0 0 6px;font-size:17px}.fivbd-whats-new-release h4{margin:12px 0 4px;font-size:15px}
+.fivbd-whats-new-release p{margin:6px 0}.fivbd-whats-new-release ul{margin:4px 0;padding-left:20px}.fivbd-whats-new-release li{margin:3px 0}
+.fivbd-whats-new-release code{padding:0 4px;border-radius:4px;background:var(--background-mod-strong)}
+.fivbd-whats-new-release+.fivbd-whats-new-release{margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle)}
+.fivbd-foot-links{display:flex;gap:7px}.fivbd-link{color:var(--text-link);cursor:pointer}.fivbd-link:hover{text-decoration:underline}
 .fivbd-setting label{display:flex;align-items:center;gap:7px}.fivbd-setting input[type=checkbox]{width:auto;margin:0}
 `;

@@ -5,6 +5,7 @@ import { renderListTab } from "./viewLists.js";
 import { renderLogTab } from "./viewLog.js";
 import { renderRepliesTab } from "./viewReplies.js";
 import { renderVoiceTab } from "./viewVoice.js";
+import { openLink, REPO_URL } from "./whatsNew.js";
 
 const TABS = [
     ["voice", "In Voice"], ["mine", "My List"], ["alerts", "Alerts"],
@@ -74,8 +75,9 @@ export class Dashboard {
             else renderRepliesTab(body, this);
         } catch (error) { body.textContent = `This panel could not load: ${String(error)}`; }
         const foot = element("footer", "fivbd-foot");
-        add(foot, element("span", "", `BetterDiscord · v${this.version}`),
-            button("Check for updates", () => void this.alerts?.checkUpdate(true)));
+        const links = element("span", "fivbd-foot-links");
+        add(links, button("GitHub", () => openLink(REPO_URL)), button("Check for updates", () => void this.alerts?.checkUpdate(true)));
+        add(foot, element("span", "", `BetterDiscord · v${this.version}`), links);
         add(panel, head, tabs, body, foot);
         this.shade.replaceChildren(panel);
         body.scrollTop = scroll;
