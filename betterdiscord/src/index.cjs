@@ -7,6 +7,7 @@ import { ReplyService } from "./replies.js";
 import { settingsPanel } from "./settingsUi.js";
 import { Dashboard } from "./view.js";
 import { VoiceLog } from "./voiceLog.js";
+import { WhatsNew } from "./whatsNew.js";
 
 module.exports = class FriendsInVoice {
     constructor(meta) {
@@ -25,6 +26,7 @@ module.exports = class FriendsInVoice {
             this.replies = new ReplyService(this.api, this.bridge, this.data);
             this.alerts = new AlertService(this.api, this.bridge, this.data, tab => this.view.open(tab), this.version);
             this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
+            this.whatsNew = new WhatsNew(this.api, this.data, this.version);
             this.voiceLog.onChange = () => { if (this.view.tab === "log") this.view.refresh(); };
             Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog });
             this.view.start();
@@ -37,7 +39,8 @@ module.exports = class FriendsInVoice {
                 void this.voiceLog.useAccount(id);
             };
             this.data.onAccount = () => this.view.refresh();
-            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); loadAccount(); };
+            const showWhatsNew = () => { this.whatsNewTimer = setTimeout(() => void this.whatsNew.check(), 3000); };
+            const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); loadAccount(); showWhatsNew(); };
             const onLogout = () => { this.data.leave(); this.voiceLog.flush(); };
             const onVoice = event => this.voiceLog.onUpdates(event?.voiceStates);
             const logEvents = {
@@ -66,6 +69,8 @@ module.exports = class FriendsInVoice {
             this.updateTimer = setInterval(() => void this.alerts.checkUpdate(), 6 * 60 * 60 * 1000);
             this.started = true;
             void this.alerts.checkUpdate();
+            // after an update BetterDiscord starts the plugin before Discord connects; otherwise it's already connected
+            if (this.bridge.currentId()) showWhatsNew();
         } catch (error) {
             this.api.UI.showToast(`FriendsInVoice could not start: ${String(error)}`, { type: "error" });
             this.stop();
@@ -75,12 +80,14 @@ module.exports = class FriendsInVoice {
     stop() {
         clearInterval(this.pollTimer);
         clearInterval(this.updateTimer);
+        clearTimeout(this.whatsNewTimer);
         for (const unsubscribe of this.unsubscribers.splice(0).reverse()) {
             try { unsubscribe?.(); } catch (error) { this.api.Logger.error("Cleanup failed", error); }
         }
         this.guards?.stop();
         this.voiceLog?.stop();
         this.view?.stop();
+        this.whatsNew?.close();
         this.started = false;
     }
     onSwitch() { this.view?.refresh(); }
