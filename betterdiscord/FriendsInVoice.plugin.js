@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.15.0
+ * @version 1.16.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -100,6 +100,26 @@ var AlertService = class {
   }
 };
 
+// src/autoStatus.js
+var AutoStatus = class {
+  constructor(api, bridge, data) {
+    this.api = api;
+    this.bridge = bridge;
+    this.data = data;
+  }
+  apply(inCall = !!this.bridge.myVoiceChannel()) {
+    const { autoStatus, statusInCall, statusOutsideCall } = this.data.value;
+    if (!autoStatus || !this.bridge.currentId()) return;
+    void this.bridge.setStatus(inCall ? statusInCall : statusOutsideCall).catch((error) => this.api.Logger.error("Auto switch status failed", error));
+  }
+  onUpdates(voiceStates) {
+    if (!this.data.value.autoStatus || !Array.isArray(voiceStates)) return;
+    const me = this.bridge.currentId();
+    const mine = voiceStates.find((state) => state?.userId === me);
+    if (mine) this.apply(!!mine.channelId);
+  }
+};
+
 // src/accountStore.js
 var DB_NAME = "FriendsInVoice";
 var STORES = ["accounts", "voiceLogs", "meta"];
@@ -136,6 +156,7 @@ function accountStore(storeName) {
 var LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "hidden"];
 var ACCOUNT_KEYS = [...LISTS, "personalGuards", "knownGuardGrants", "guardPeerKeys", "guardBlocks", "guardReplay"];
 var ACTIONS = ["mute", "deafen", "disconnect"];
+var STATUSES = ["online", "idle", "dnd", "invisible"];
 var DEFAULTS = {
   watchlist: [],
   notifyOnline: [],
@@ -149,6 +170,9 @@ var DEFAULTS = {
   aiModel: "claude-opus-5-5",
   checkForUpdates: true,
   showWhatsNew: true,
+  autoStatus: false,
+  statusInCall: "online",
+  statusOutsideCall: "invisible",
   personalGuards: [],
   knownGuardGrants: [],
   guardPeerKeys: [],
@@ -161,10 +185,12 @@ function normalizeData(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const data = { ...DEFAULTS };
   for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew"])
+  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus"])
     if (typeof source[key] === "boolean") data[key] = source[key];
   for (const key of ["anthropicApiKey", "aiModel"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
+  for (const key of ["statusInCall", "statusOutsideCall"])
+    if (STATUSES.includes(source[key])) data[key] = source[key];
   for (const key of ["personalGuards", "knownGuardGrants"])
     data[key] = Array.isArray(source[key]) ? source[key].filter((item) => isId(item?.userId) && Array.isArray(item.actions)).map((item) => ({ userId: item.userId, actions: ACTIONS.filter((action) => item.actions.includes(action)) })) : [];
   data.guardPeerKeys = Array.isArray(source.guardPeerKeys) ? source.guardPeerKeys.filter((item) => isId(item?.userId) && typeof item.publicKey === "string" && /^[A-Za-z0-9_-]{87}$/.test(item.publicKey)).map((item) => ({ userId: item.userId, publicKey: item.publicKey })) : [];
@@ -251,7 +277,6 @@ var VIEW_CHANNEL = 1n << 10n;
 var CONNECT = 1n << 20n;
 var MOVE_MEMBERS = 1n << 24n;
 var CHANNEL_OBFUSCATED = 1 << 17;
-var STATUSES = ["online", "idle", "dnd", "invisible"];
 var IN_EXPORTS = { searchExports: true };
 var DiscordBridge = class {
   constructor(api) {
@@ -433,7 +458,7 @@ var DiscordBridge = class {
     }
     return null;
   }
-  async setInvisible() {
+  findStatusSetting() {
     this.statusSetting ??= this.api.Webpack.getModule?.((item) => {
       try {
         return typeof item?.updateSetting === "function" && STATUSES.includes(item.getSetting?.());
@@ -441,8 +466,16 @@ var DiscordBridge = class {
         return false;
       }
     }, IN_EXPORTS);
-    if (this.statusSetting?.updateSetting) return this.statusSetting.updateSetting("invisible");
+    if (this.statusSetting?.updateSetting) return this.statusSetting;
     throw new Error("Discord's status control is unavailable in this build.");
+  }
+  /** sets your own status; only writes when it actually changes */
+  async setStatus(status) {
+    const setting = this.findStatusSetting();
+    if (setting.getSetting?.() !== status) return setting.updateSetting(status);
+  }
+  setInvisible() {
+    return this.setStatus("invisible");
   }
 };
 
@@ -1778,8 +1811,10 @@ var SWITCHES = [
   ["smartReplies", "Show built-in smart replies in the dashboard"],
   ["smartRepliesAi", "Enable the optional Claude reply button"],
   ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
-  ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"]
+  ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
+  ["autoStatus", "Auto switch status: change your status when you join or leave a call"]
 ];
+var STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 function settingsPanel(view) {
   const root = element("div", "fivbd-setting");
   add(
@@ -1795,9 +1830,31 @@ function settingsPanel(view) {
     input.checked = view.data.value[key];
     input.addEventListener("change", () => {
       view.data.set(key, input.checked);
+      if (key === "autoStatus") view.autoStatus?.apply();
       view.render();
     });
     add(label, input, element("span", "", title));
+    root.append(label);
+  }
+  for (const [key, title] of [
+    ["statusInCall", "Auto switch status: your status while you're in a voice channel or call"],
+    ["statusOutsideCall", "Auto switch status: your status when you're not in a call"]
+  ]) {
+    const label = element("label");
+    label.style.alignItems = "flex-start";
+    label.style.flexDirection = "column";
+    const select = element("select");
+    for (const [value, text] of Object.entries(STATUS_LABELS)) {
+      const option = element("option", "", text);
+      option.value = value;
+      select.append(option);
+    }
+    select.value = view.data.value[key];
+    select.addEventListener("change", () => {
+      view.data.set(key, select.value);
+      view.autoStatus?.apply();
+    });
+    add(label, element("span", "", title), select);
     root.append(label);
   }
   for (const [key, title, type] of [
@@ -1830,7 +1887,7 @@ var STYLE = `
 .fivbd-panel button,.fivbd-setting button{cursor:pointer;padding:6px 10px;border-radius:7px;border:1px solid var(--border-subtle);background:var(--background-secondary);color:var(--text-normal)}
 .fivbd-panel button:disabled{cursor:not-allowed;opacity:.5}.fivbd-panel button:hover:not(:disabled){background:var(--background-mod-strong)}
 .fivbd-panel .active{background:var(--brand-500);color:white}.fivbd-panel .danger{color:var(--status-danger,#f23f43)}
-.fivbd-search,.fivbd-setting input{box-sizing:border-box;width:100%;max-width:440px;padding:8px;margin:0 0 14px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--input-background);color:var(--text-normal)}
+.fivbd-search,.fivbd-setting input,.fivbd-setting select{box-sizing:border-box;width:100%;max-width:440px;padding:8px;margin:0 0 14px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--input-background);color:var(--text-normal)}
 .fivbd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:12px 0 20px}
 .fivbd-card{padding:13px;border:1px solid var(--border-subtle);border-radius:10px;background:var(--background-secondary)}
 .fivbd-card h3{margin:0 0 7px;font-size:15px}.fivbd-card p{margin:5px 0;color:var(--text-muted)}
@@ -2658,10 +2715,11 @@ module.exports = class FriendsInVoice {
       this.alerts = new AlertService(this.api, this.bridge, this.data, (tab) => this.view.open(tab), this.version);
       this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
       this.whatsNew = new WhatsNew(this.api, this.data, this.version);
+      this.autoStatus = new AutoStatus(this.api, this.bridge, this.data);
       this.voiceLog.onChange = () => {
         if (this.view.tab === "log") this.view.refresh();
       };
-      Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog });
+      Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus });
       this.view.start();
       this.unsubscribers.push(installUserMenu(this.api, this.view));
       const onMessage = (event) => void this.guards.onMessage(event?.message).catch((error) => this.api.Logger.error("Guard message failed", error));
@@ -2679,12 +2737,16 @@ module.exports = class FriendsInVoice {
         this.voiceLog.reconnect();
         loadAccount();
         showWhatsNew();
+        this.autoStatus.apply();
       };
       const onLogout = () => {
         this.data.leave();
         this.voiceLog.flush();
       };
-      const onVoice = (event) => this.voiceLog.onUpdates(event?.voiceStates);
+      const onVoice = (event) => {
+        this.voiceLog.onUpdates(event?.voiceStates);
+        this.autoStatus.onUpdates(event?.voiceStates);
+      };
       const logEvents = {
         RELATIONSHIP_ADD: (event) => this.voiceLog.onRelationshipAdd(event?.relationship),
         RELATIONSHIP_REMOVE: (event) => this.voiceLog.onRelationshipRemove(event?.relationship),
@@ -2707,6 +2769,7 @@ module.exports = class FriendsInVoice {
       loadAccount();
       this.voiceLog.seed();
       this.alerts.seed();
+      this.autoStatus.apply();
       this.pollTimer = setInterval(() => {
         this.alerts.poll();
         this.view.refresh();

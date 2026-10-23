@@ -1,9 +1,10 @@
+import { STATUSES } from "./data.js";
+
 // Discord permission bits: https://docs.discord.com/developers/topics/permissions#permissions-bitwise-permission-flags
 const VIEW_CHANNEL = 1n << 10n;
 const CONNECT = 1n << 20n;
 const MOVE_MEMBERS = 1n << 24n;
 const CHANNEL_OBFUSCATED = 1 << 17;
-const STATUSES = ["online", "idle", "dnd", "invisible"];
 // Discord exports these under minified names (the dispatcher is "h"), which BdApi only checks with searchExports
 const IN_EXPORTS = { searchExports: true };
 
@@ -160,12 +161,18 @@ export class DiscordBridge {
         }
         return null;
     }
-    async setInvisible() {
+    findStatusSetting() {
         // Discord's status user setting is the one exported setting whose value is a status
         this.statusSetting ??= this.api.Webpack.getModule?.(item => {
             try { return typeof item?.updateSetting === "function" && STATUSES.includes(item.getSetting?.()); } catch { return false; }
         }, IN_EXPORTS);
-        if (this.statusSetting?.updateSetting) return this.statusSetting.updateSetting("invisible");
+        if (this.statusSetting?.updateSetting) return this.statusSetting;
         throw new Error("Discord's status control is unavailable in this build.");
     }
+    /** sets your own status; only writes when it actually changes */
+    async setStatus(status) {
+        const setting = this.findStatusSetting();
+        if (setting.getSetting?.() !== status) return setting.updateSetting(status);
+    }
+    setInvisible() { return this.setStatus("invisible"); }
 }
