@@ -18,11 +18,12 @@ export function renderVoiceTab(parent, view) {
             for (const member of room.members) {
                 const row = element("div", "fivbd-person");
                 const flags = [member.mute && "muted", member.deaf && "deafened", member.stream && "streaming"].filter(Boolean).join(", ");
-                add(row, element("span", "", `${member.name}${flags ? ` · ${flags}` : ""}`),
-                    button(member.watched ? "★" : "☆", () => { view.data.toggleList("watchlist", member.id); update(); }));
+                const label = element("span", "", `${member.name}${flags ? ` · ${flags}` : ""} `);
+                if (member.friend) label.append(element("span", "fivbd-log-pill", "FRIEND"), " ");
+                if (member.hidden) label.append(element("span", "fivbd-log-pill", "HIDDEN"));
+                add(row, label, button(member.watched ? "★" : "☆", () => { view.data.toggleList("watchlist", member.id); update(); }));
                 card.append(row);
             }
-            if (room.hiddenCount) card.append(paragraph(`🙈 ${room.hiddenCount} hidden ${room.hiddenCount === 1 ? "person" : "people"}`, "fivbd-muted"));
             if (view.bridge.voiceChannel(view.bridge.currentId()) !== room.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
                 const join = button(room.blocker ?? "Join voice", () => {
                     try { view.bridge.voiceChannelActions.selectVoiceChannel(room.channelId); } catch (error) { view.error(error); }

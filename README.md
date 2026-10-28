@@ -44,7 +44,7 @@ Right-click a user → **Add to Run away** (or **Remove from Run away**). Every 
 
 ### 🙈 Hide someone from In voice
 
-Right-click a user → **Hide from In voice**. They stop showing up in the 🔊 In voice tab, they no longer bring a room into the list, and they don't count in the badge on the server-list button; a room you see for other friends just says "🙈 1 hidden person". To bring them back, right-click them → **Show in In voice**, or press ✕ next to their name in the 🙈 Hidden list at the bottom of the In voice tab. My list, alerts and Run away keep working for them as before.
+Right-click a user → **Hide from In voice**. They stop showing up in the 🔊 In voice tab, they no longer bring a room into the list, and they don't count in the badge on the server-list button; in a room you see for other friends they're still listed, with a **HIDDEN** tag next to their name. To bring them back, right-click them → **Show in In voice**, or press ✕ next to their name in the 🙈 Hidden list at the bottom of the In voice tab. My list, alerts and Run away keep working for them as before.
 
 ### 📜 Log
 

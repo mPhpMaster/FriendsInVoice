@@ -36,7 +36,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 
 export { inList, isOnline, toggleInList } from "./notifications";
 
-const VERSION = "1.16.0";
+const VERSION = "1.17.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -275,7 +275,7 @@ function FriendsInVoicePage() {
         };
     }, []);
 
-    const friendsInVoice = new Set(data.rooms.flatMap(r => r.members.filter(m => m.isFriend && !m.isMe).map(m => m.user.id))).size;
+    const friendsInVoice = new Set(data.rooms.flatMap(r => r.members.filter(m => m.isFriend && !m.isMe && !m.isHidden).map(m => m.user.id))).size;
     const watchedInVoice = data.watchlist.filter(id => data.roomByUser.has(id)).length;
 
     return (
