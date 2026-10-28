@@ -118,7 +118,7 @@ export class DiscordBridge {
     rooms(watchlist = [], hidden = []) {
         const friendIds = new Set(this.relationshipStore.getFriendIDs?.() ?? []);
         const me = this.currentId();
-        // people on the Hidden list neither bring a room into the list nor show up in it
+        // people on the Hidden list don't bring a room into the list, but are still shown (tagged) in one
         const isHidden = id => id !== me && hidden.includes(id);
         const tracked = new Set([...friendIds, ...watchlist].filter(id => !isHidden(id)));
         // getAllVoiceStates() is keyed by guild id ("@me" for calls), then user id; group the states by their channel
@@ -135,10 +135,10 @@ export class DiscordBridge {
             const channel = this.channel(channelId);
             if (!channel) continue;
             const info = this.roomDescription(channel);
-            result.push({ channelId, ...info, blocker: this.joinBlocker(channel), hiddenCount: members.filter(state => isHidden(state.userId)).length,
-                members: members.filter(state => !isHidden(state.userId)).map(state => ({
+            result.push({ channelId, ...info, blocker: this.joinBlocker(channel),
+                members: members.map(state => ({
                 id: state.userId, name: this.name(state.userId, info.guildId),
-                friend: friendIds.has(state.userId), watched: watchlist.includes(state.userId),
+                friend: friendIds.has(state.userId), watched: watchlist.includes(state.userId), hidden: isHidden(state.userId),
                 mute: !!(state.mute || state.selfMute), deaf: !!(state.deaf || state.selfDeaf), stream: !!state.selfStream
             })) });
         }
