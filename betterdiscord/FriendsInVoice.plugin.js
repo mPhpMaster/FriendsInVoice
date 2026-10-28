@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.16.0
+ * @version 1.17.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -425,12 +425,12 @@ var DiscordBridge = class {
         channelId,
         ...info,
         blocker: this.joinBlocker(channel),
-        hiddenCount: members.filter((state) => isHidden(state.userId)).length,
-        members: members.filter((state) => !isHidden(state.userId)).map((state) => ({
+        members: members.map((state) => ({
           id: state.userId,
           name: this.name(state.userId, info.guildId),
           friend: friendIds.has(state.userId),
           watched: watchlist.includes(state.userId),
+          hidden: isHidden(state.userId),
           mute: !!(state.mute || state.selfMute),
           deaf: !!(state.deaf || state.selfDeaf),
           stream: !!state.selfStream
@@ -2555,17 +2555,15 @@ function renderVoiceTab(parent, view) {
       for (const member of room2.members) {
         const row = element("div", "fivbd-person");
         const flags = [member.mute && "muted", member.deaf && "deafened", member.stream && "streaming"].filter(Boolean).join(", ");
-        add(
-          row,
-          element("span", "", `${member.name}${flags ? ` \xB7 ${flags}` : ""}`),
-          button(member.watched ? "\u2605" : "\u2606", () => {
-            view.data.toggleList("watchlist", member.id);
-            update();
-          })
-        );
+        const label = element("span", "", `${member.name}${flags ? ` \xB7 ${flags}` : ""} `);
+        if (member.friend) label.append(element("span", "fivbd-log-pill", "FRIEND"), " ");
+        if (member.hidden) label.append(element("span", "fivbd-log-pill", "HIDDEN"));
+        add(row, label, button(member.watched ? "\u2605" : "\u2606", () => {
+          view.data.toggleList("watchlist", member.id);
+          update();
+        }));
         card.append(row);
       }
-      if (room2.hiddenCount) card.append(paragraph(`\u{1F648} ${room2.hiddenCount} hidden ${room2.hiddenCount === 1 ? "person" : "people"}`, "fivbd-muted"));
       if (view.bridge.voiceChannel(view.bridge.currentId()) !== room2.channelId && view.bridge.voiceChannelActions?.selectVoiceChannel) {
         const join = button(room2.blocker ?? "Join voice", () => {
           try {

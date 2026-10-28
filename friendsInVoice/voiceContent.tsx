@@ -23,6 +23,8 @@ export interface Member {
     isFriend: boolean;
     isWatched: boolean;
     isMe: boolean;
+    /** on your Hidden list: still listed, but tagged and never a reason for the room */
+    isHidden: boolean;
     muted: boolean;
     deafened: boolean;
     streaming: boolean;
@@ -36,8 +38,6 @@ export interface Room {
     members: Member[];
     reasons: Member[];
     hasFriend: boolean;
-    /** people in the room left out because they're on the Hidden list */
-    hiddenCount: number;
 }
 
 export function displayName(user: User, guildId: string | null) {
@@ -74,22 +74,18 @@ export function describeChannel(channel: Channel) {
 
 function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watched: Set<string>, hidden: Set<string>, myId?: string): Room {
     const members: Member[] = [];
-    let hiddenCount = 0;
     for (const s of states) {
         const user = UserStore.getUser(s.userId);
         if (!user) continue;
 
         const isMe = user.id === myId;
-        if (!isMe && hidden.has(user.id)) {
-            hiddenCount++;
-            continue;
-        }
         members.push({
             user,
             name: displayName(user, channel.guild_id ?? null),
             isFriend: friendIds.has(user.id),
             isWatched: watched.has(user.id),
             isMe,
+            isHidden: !isMe && hidden.has(user.id),
             muted: !!(s.mute || s.selfMute),
             deafened: !!(s.deaf || s.selfDeaf),
             streaming: !!s.selfStream
@@ -99,14 +95,13 @@ function buildRoom(channel: Channel, states: any[], friendIds: Set<string>, watc
     const rank = (m: Member) => (m.isWatched ? 2 : 0) + (m.isFriend ? 1 : 0);
     members.sort((a, b) => rank(b) - rank(a) || a.name.localeCompare(b.name));
 
-    const reasons = members.filter(m => !m.isMe && (m.isFriend || m.isWatched));
+    const reasons = members.filter(m => !m.isMe && !m.isHidden && (m.isFriend || m.isWatched));
     return {
         channel,
         ...describeChannel(channel),
         members,
         reasons,
-        hasFriend: reasons.some(m => m.isFriend),
-        hiddenCount
+        hasFriend: reasons.some(m => m.isFriend)
     };
 }
 
@@ -315,6 +310,7 @@ export function MemberRow({ member }: { member: Member; }) {
             </span>
             {member.isWatched && <span className={cl("pill", "pill-watch")}>MY LIST</span>}
             {member.isFriend && <span className={cl("pill", "pill-friend")}>FRIEND</span>}
+            {member.isHidden && <span className={cl("pill", "pill-hidden")} title="On your Hidden list. Right-click them → Show in In voice to bring them back">HIDDEN</span>}
             {showsOffline && <span className={cl("pill", "pill-offline")} title="Their status shows offline, but they're in this room">SHOWS OFFLINE</span>}
             {member.streaming && <span className={cl("pill", "pill-live")}>LIVE</span>}
             {member.deafened ? <span className={cl("tag")} title="Deafened">🔇</span>
@@ -364,11 +360,6 @@ export function RoomCard({ room, inThisRoom }: { room: Room; inThisRoom: boolean
             <div className={cl("members")}>
                 {room.members.map(m => <MemberRow key={m.user.id} member={m} />)}
             </div>
-            {room.hiddenCount > 0 && (
-                <div className={cl("muted", "hidden-note")} title="People on your Hidden list. Right-click someone → Show in In voice to bring them back">
-                    🙈 {room.hiddenCount} hidden {room.hiddenCount === 1 ? "person" : "people"}
-                </div>
-            )}
         </div>
     );
 }
