@@ -60,12 +60,11 @@ test("a room at its user limit is Full unless the user has Move Members", () => 
     assert.equal(bridge({ moveMembers: true }).bridge.joinBlocker({ id: full, guild_id: guild, userLimit: 1 }), null);
 });
 
-test("hidden people don't bring a room into the list or show up in one", () => {
+test("hidden people don't bring a room into the list but are still shown, tagged, in one", () => {
     const { bridge: b, voiceStates } = bridge();
     assert.equal(b.rooms([], [friend]).length, 0);
     const other = "777777777777777777";
     voiceStates[guild][other] = { userId: other, channelId: open };
     const [room] = b.rooms([other], [friend]);
-    assert.deepEqual(room.members.map(member => member.id), [other]);
-    assert.equal(room.hiddenCount, 1);
+    assert.deepEqual(room.members.map(member => [member.id, member.hidden]).sort(), [[friend, true], [other, false]].sort());
 });
