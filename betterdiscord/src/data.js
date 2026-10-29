@@ -1,8 +1,9 @@
 import { accountStore } from "./accountStore.js";
+import { normalizeGuardGrant, normalizeGuardInvites } from "./guardData.js";
 
 export const LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "hidden"];
 /** saved per Discord account; everything else is shared by every account on this computer */
-export const ACCOUNT_KEYS = [...LISTS, "personalGuards", "knownGuardGrants", "guardPeerKeys", "guardBlocks", "guardReplay"];
+export const ACCOUNT_KEYS = [...LISTS, "personalGuards", "knownGuardGrants", "pendingGuardInvites", "declinedGuardInvites", "guardPeerKeys", "guardBlocks", "guardReplay"];
 export const ACTIONS = ["mute", "deafen", "disconnect"];
 export const STATUSES = ["online", "idle", "dnd", "invisible"];
 
@@ -11,7 +12,7 @@ const DEFAULTS = {
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
     anthropicApiKey: "", aiModel: "claude-opus-5-5", checkForUpdates: true, showWhatsNew: true,
     autoStatus: false, statusInCall: "online", statusOutsideCall: "invisible",
-    personalGuards: [], knownGuardGrants: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
+    personalGuards: [], knownGuardGrants: [], pendingGuardInvites: [], declinedGuardInvites: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
 };
 export const isId = value => typeof value === "string" && /^\d{17,20}$/.test(value);
 const isAction = value => ACTIONS.includes(value);
@@ -28,7 +29,10 @@ export function normalizeData(raw) {
         if (STATUSES.includes(source[key])) data[key] = source[key];
     for (const key of ["personalGuards", "knownGuardGrants"])
         data[key] = Array.isArray(source[key]) ? source[key].filter(item => isId(item?.userId) && Array.isArray(item.actions))
-            .map(item => ({ userId: item.userId, actions: ACTIONS.filter(action => item.actions.includes(action)) })) : [];
+            .map(item => normalizeGuardGrant(item, ACTIONS)) : [];
+    data.pendingGuardInvites = normalizeGuardInvites(source.pendingGuardInvites);
+    data.declinedGuardInvites = (Array.isArray(source.declinedGuardInvites) ? source.declinedGuardInvites : [])
+        .filter(value => typeof value === "string" && /^[a-f\d-]{36}$/i.test(value)).slice(-50);
     data.guardPeerKeys = Array.isArray(source.guardPeerKeys) ? source.guardPeerKeys.filter(item => isId(item?.userId) &&
         typeof item.publicKey === "string" && /^[A-Za-z0-9_-]{87}$/.test(item.publicKey))
         .map(item => ({ userId: item.userId, publicKey: item.publicKey })) : [];
@@ -36,7 +40,7 @@ export function normalizeData(raw) {
         Number.isSafeInteger(item.until) && item.until > Date.now()).map(item => ({ userId: item.userId, until: item.until })) : [];
     data.guardReplay = Array.isArray(source.guardReplay) ? source.guardReplay.filter(item => typeof item?.nonce === "string" &&
         Number.isSafeInteger(item.createdAt) && Date.now() - item.createdAt < 300000)
-        .map(item => ({ nonce: item.nonce, createdAt: item.createdAt })) : [];
+        .map(item => ({ nonce: item.nonce, createdAt: item.createdAt, ...(isId(item.guardianId) ? { guardianId: item.guardianId } : {}) })) : [];
     return data;
 }
 
@@ -99,7 +103,9 @@ export class DataStore {
     grant(id, actions) {
         if (!isId(id) || !Array.isArray(actions) || !actions.every(isAction)) return false;
         this.value.personalGuards = [...this.value.personalGuards.filter(item => item.userId !== id),
-            { userId: id, actions: ACTIONS.filter(action => actions.includes(action)) }];
+            { userId: id, actions: ACTIONS.filter(action => actions.includes(action)),
+                ...(this.value.personalGuards.find(item => item.userId === id)?.inviteNonce ?
+                    { inviteNonce: this.value.personalGuards.find(item => item.userId === id).inviteNonce } : {}) }];
         this.save();
         return true;
     }

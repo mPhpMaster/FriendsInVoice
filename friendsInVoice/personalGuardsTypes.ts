@@ -10,6 +10,8 @@ export interface GuardGrant {
     userId: string;
     actions: GuardAction[];
     inviteNonce?: string;
+    inviteMessageId?: string;
+    inviteChannelId?: string;
 }
 
 export interface GuardCommand {
@@ -58,6 +60,8 @@ export interface GuardInvite {
     actions: GuardAction[];
     publicKey: string;
     nonce: string;
+    messageId?: string;
+    channelId?: string;
 }
 
 export interface GuardsStore {
@@ -67,7 +71,7 @@ export interface GuardsStore {
     declinedGuardInvites: string[];
     guardPeerKeys: { userId: string; publicKey: string; }[];
     guardBlocks: { userId: string; until: number; }[];
-    guardReplay: { nonce: string; createdAt: number; }[];
+    guardReplay: { nonce: string; createdAt: number; guardianId?: string; }[];
 }
 
 export interface GuardEvent {

@@ -24,6 +24,7 @@ module.exports = class FriendsInVoice {
             this.bridge = new DiscordBridge(this.api);
             this.view = new Dashboard(this.api, this.bridge, this.data, this.version);
             this.guards = new GuardService(this.api, this.bridge, this.data, tab => this.view.open(tab));
+            this.guards.changed = () => this.view.refresh();
             this.replies = new ReplyService(this.api, this.bridge, this.data);
             this.alerts = new AlertService(this.api, this.bridge, this.data, tab => this.view.open(tab), this.version);
             this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
@@ -35,22 +36,30 @@ module.exports = class FriendsInVoice {
             this.unsubscribers.push(installUserMenu(this.api, this.view));
             const onMessage = event => void this.guards.onMessage(event?.message).catch(error => this.api.Logger.error("Guard message failed", error));
             // each Discord account has its own lists and log; Discord connects again after switching accounts
-            const loadAccount = () => {
+            const loadAccount = async () => {
                 const id = this.bridge.currentId();
-                void this.data.useAccount(id);
+                await this.data.useAccount(id);
                 void this.voiceLog.useAccount(id);
+                if (this.started) void this.guards.account.refresh();
             };
             this.data.onAccount = () => this.view.refresh();
             const showWhatsNew = () => { this.whatsNewTimer = setTimeout(() => void this.whatsNew.check(), 3000); };
             const onConnect = () => { this.alerts.reconnect(); this.voiceLog.reconnect(); loadAccount(); showWhatsNew(); this.autoStatus.apply(); };
             const onLogout = () => { this.data.leave(); this.voiceLog.flush(); };
-            const onVoice = event => { this.voiceLog.onUpdates(event?.voiceStates); this.autoStatus.onUpdates(event?.voiceStates); };
+            const onVoice = event => {
+                this.voiceLog.onUpdates(event?.voiceStates); this.autoStatus.onUpdates(event?.voiceStates);
+                for (const id of Object.keys(this.bridge.voiceStore.getVoiceStatesForChannel?.(this.bridge.myVoiceChannel()) ?? {}).slice(0, 20))
+                    void this.guards.account.sync(id, 1);
+            };
             const logEvents = {
                 RELATIONSHIP_ADD: event => this.voiceLog.onRelationshipAdd(event?.relationship),
                 RELATIONSHIP_REMOVE: event => this.voiceLog.onRelationshipRemove(event?.relationship),
                 GUILD_CREATE: event => event?.guild?.id && this.voiceLog.guild(event.guild.id),
                 GUILD_UPDATE: event => event?.guild?.id && this.voiceLog.guild(event.guild.id),
-                GUILD_DELETE: event => this.voiceLog.onGuildDelete(event?.guild)
+                GUILD_DELETE: event => this.voiceLog.onGuildDelete(event?.guild),
+                CHANNEL_SELECT: event => this.guards.account.onChannel(event?.channelId),
+                MESSAGE_REACTION_ADD: event => this.guards.account.onReaction(event),
+                MESSAGE_REACTION_REMOVE: event => this.guards.account.onReaction(event)
             };
             this.bridge.dispatcher.subscribe("MESSAGE_CREATE", onMessage);
             this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);

@@ -9,8 +9,7 @@ import { openUserProfileModal, React, UserStore, useState } from "@webpack/commo
 
 import { ownerSetupMessage, ownerSetupStep } from "./personalGuardsOnboarding";
 import { GUARD_ACTIONS, GUARD_LABELS } from "./personalGuardsProtocol";
-import { acceptGuardInvite, getGrant, guardDisplayName, type GuardsStore, hasGuardKey, revokeGuard, sendGuardCommand, sendGuardInvite, setGrant, sharesVoice } from "./personalGuardsRuntime";
-import { removeGuardAccess, writeGuardSetting } from "./personalGuardsSettings";
+import { acceptGuardInvite, declineGuardInvite, getGrant, guardDisplayName, type GuardsStore, hasGuardKey, removeGuardAccountAccess, revokeGuard, sendGuardCommand, sendGuardInvite, setGrant, sharesVoice } from "./personalGuardsRuntime";
 import type { GuardAction } from "./personalGuardsTypes";
 
 const cl = classNameFactory("vc-fiv-");
@@ -80,7 +79,7 @@ function AccessRow({ ownerId, store, refresh }: { ownerId: string; store: Guards
         {!together && <small>Join the same voice channel to use guard actions.</small>}
         <div className={cl("guard-controls")}>
             <button className={cl("guard-danger")} title="Remove this saved access from your device" onClick={() => {
-                removeGuardAccess(store, ownerId);
+                void removeGuardAccountAccess(ownerId);
                 refresh();
             }}>Remove access</button>
         </div>
@@ -113,7 +112,7 @@ export function PersonalGuardsTab({ store, refresh }: { store: GuardsStore; refr
                 <p className={cl("guard-step")}>Allowed: {invite.actions.map(action => GUARD_LABELS[action]).join(", ")}</p>
                 <div className={cl("guard-controls")}>
                     <button onClick={() => { acceptGuardInvite(store, invite.userId); refresh(); }}>Accept invitation</button>
-                    <button onClick={() => { writeGuardSetting(store, "pendingGuardInvites", store.pendingGuardInvites.filter(item => item.userId !== invite.userId)); refresh(); }}>Decline</button>
+                    <button onClick={() => void declineGuardInvite(store, invite.userId, invite.nonce, invite)}>Refuse</button>
                 </div>
             </section>)}
         </div></>}

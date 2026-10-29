@@ -313,10 +313,24 @@ if [ "$VENCORD_INSTALLED" = 0 ]; then
 fi
 
 info "Adding $DISPLAY_NAME to Vencord..."
-mkdir -p "$PLUGIN_DIR"
-cp -R "$PLUGIN_SRC/." "$PLUGIN_DIR/"
-
-build_vencord "$VENCORD_DIR"
+mkdir -p "$(dirname "$PLUGIN_DIR")"
+# Stage outside src/userplugins so the build cannot load a second copy of the plugin.
+INSTALL_WORK="$(mktemp -d "$VENCORD_DIR/.friends-in-voice-install.XXXXXX")"
+cp -R "$PLUGIN_SRC" "$INSTALL_WORK/new"
+if [ -d "$PLUGIN_DIR" ]; then mv "$PLUGIN_DIR" "$INSTALL_WORK/previous"; fi
+if ! mv "$INSTALL_WORK/new" "$PLUGIN_DIR"; then
+    if [ -d "$INSTALL_WORK/previous" ]; then mv "$INSTALL_WORK/previous" "$PLUGIN_DIR"; fi
+    die "Could not install plugin source. Backup: $INSTALL_WORK"
+fi
+if ! (build_vencord "$VENCORD_DIR"); then
+    mv "$PLUGIN_DIR" "$INSTALL_WORK/failed"
+    if [ -d "$INSTALL_WORK/previous" ]; then
+        mv "$INSTALL_WORK/previous" "$PLUGIN_DIR"
+        (build_vencord "$VENCORD_DIR") || warn "The previous source was restored but rebuilding it failed. Backup: $INSTALL_WORK"
+    fi
+    die "Installation failed; previous plugin source was restored when available. Backup: $INSTALL_WORK"
+fi
+ok "Backup of the previous plugin, if any: $INSTALL_WORK/previous"
 
 [ "$DISCORD_PATCHED" = 1 ] || inject_vencord "$VENCORD_DIR"
 

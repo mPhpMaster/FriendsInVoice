@@ -29,12 +29,13 @@ test("BetterDiscord guard adapter exchanges encrypted grants and enforces action
         const applied = [];
         const bridge = {
             currentId: () => ownerId, prepareDm: async (id, text) => drafts.push({ id, text }),
-            channel: () => ({ isDM: () => true }), isDm: channel => channel.isDM(),
+            channel: () => ({ isDM: () => true, recipients: [guardianId] }), isDm: channel => channel.isDM(),
             sharesVoice: () => true, applyGuardAction: action => { applied.push(action); return () => {}; },
             name: id => id
         };
         const api = { UI: { showToast() {}, showNotice() {} } };
         const data = new DataStore({ Data: { load: () => null, save() {} } });
+        await data.useAccount(ownerId);
         data.grant(guardianId, ["mute"]);
         const service = new GuardService(api, bridge, data, () => {});
         const guardianPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);

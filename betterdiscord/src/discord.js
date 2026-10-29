@@ -22,6 +22,7 @@ export class DiscordBridge {
         this.permissionStore = webpack.getStore("PermissionStore");
         this.selectedChannelStore = webpack.getStore("SelectedChannelStore");
         this.messageStore = webpack.getStore("MessageStore");
+        this.draftStore = webpack.getStore("DraftStore");
         this.mediaStore = webpack.getStore("MediaEngineStore");
         this.dispatcher = webpack.getByKeys("subscribe", "unsubscribe", "dispatch", IN_EXPORTS);
         this.channelActions = webpack.getByKeys("openPrivateChannel");
@@ -29,6 +30,7 @@ export class DiscordBridge {
         this.voiceActions = webpack.getByKeys("toggleSelfMute", "toggleSelfDeaf");
         this.voiceChannelActions = webpack.getByKeys("selectVoiceChannel", "selectChannel");
         this.profileActions = webpack.getByKeys("openUserProfileModal");
+        this.rest = webpack.getByKeys("get", "put", "del", "post", IN_EXPORTS);
         // Discord's router exports transitionTo under a minified name; find it by its log message
         this.transitionTo = webpack.getByStrings?.("transitionTo - Transitioning to", IN_EXPORTS);
         if (!this.userStore || !this.channelStore || !this.voiceStore || !this.relationshipStore || !this.permissionStore || !this.dispatcher)
@@ -83,10 +85,30 @@ export class DiscordBridge {
         throw new Error("The intended DM did not open. No text was inserted.");
     }
     async prepareDm(id, text) {
+        if (this.preparingGuardDm) throw new Error("Another guard message is being prepared. Wait before choosing another action.");
+        this.preparingGuardDm = true;
+        try {
         await this.openDm(id);
+        const channel = this.currentDm();
+        if (!channel || channel.recipients?.length !== 1 || channel.recipients[0] !== id || !this.draftStore?.getDraft)
+            throw new Error("The intended DM or its draft is unavailable. Nothing was added.");
+        if ((this.draftStore.getDraft(channel.id, 0) ?? "").trim())
+            throw new Error("This DM already has an unsent draft. Send or clear it first. Nothing was added.");
         if (!this.componentDispatch?.dispatchToLastSubscribed)
             throw new Error("Discord's message composer is unavailable. Nothing was sent.");
         this.componentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { rawText: text, plainText: text });
+        } finally { this.preparingGuardDm = false; }
+    }
+    async guardHistory(channelId, before) {
+        if (!this.rest?.get) throw new Error("Discord's message history is unavailable.");
+        const response = await this.rest.get({ url: `/channels/${channelId}/messages`, query: { limit: 100, ...(before ? { before } : {}) } });
+        if (!Array.isArray(response.body)) throw new Error("Discord did not return the invitation history.");
+        return response.body;
+    }
+    async guardReaction(channelId, messageId, emoji, add) {
+        const method = add ? "put" : "del";
+        if (!this.rest?.[method]) throw new Error("Discord's reaction control is unavailable.");
+        await this.rest[method]({ url: `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me` });
     }
     insertReply(text) {
         if (!this.componentDispatch?.dispatchToLastSubscribed) throw new Error("Discord's message composer is unavailable.");

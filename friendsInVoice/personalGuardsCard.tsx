@@ -7,9 +7,11 @@
 import { Button } from "@components/Button";
 import { classNameFactory } from "@utils/css";
 import type { Channel, Message } from "@vencord/discord-types";
-import { MessageStore, React, useMemo, UserStore, useStateFromStores } from "@webpack/common";
+import { MessageStore, React, useEffect, useMemo, UserStore, useStateFromStores } from "@webpack/common";
 
 import { settings } from ".";
+import { accountInvite } from "./personalGuardsAccount";
+import { hydrateGuardAccountMessage } from "./personalGuardsAccountSync";
 import { GUARD_LABELS, parseGuardMessage } from "./personalGuardsProtocol";
 import { acceptGuardInvite, declineGuardInvite, guardDisplayName, inviteFromMessage } from "./personalGuardsRuntime";
 
@@ -26,10 +28,12 @@ function newestInviteId(channelId: string, authorId: string): string | null {
 }
 
 /** Shown under a Personal Guard invite in a DM, so it can be accepted whenever the guardian opens the chat */
-export function GuardInviteCard({ message, channel }: { message: Message; channel: Channel; }) {
+export function GuardInviteCard({ message: original, channel }: { message: Message; channel: Channel; }) {
+    const message = useStateFromStores([MessageStore], () => MessageStore.getMessage(channel.id, original.id) ?? original);
     const { knownGuardGrants, declinedGuardInvites } = settings.use(["knownGuardGrants", "declinedGuardInvites"]);
     const invite = useMemo(() => inviteFromMessage(message as any), [message.content, message.author?.id]);
     const newest = useStateFromStores([MessageStore], () => newestInviteId(channel.id, message.author?.id));
+    useEffect(() => { void hydrateGuardAccountMessage(message as any); }, [message.id, message.content, message.reactions]);
     if (!invite) return null;
 
     const allowed = invite.actions.map(action => GUARD_LABELS[action].toLowerCase()).join(", ");
@@ -45,8 +49,9 @@ export function GuardInviteCard({ message, channel }: { message: Message; channe
 
     const ownerName = guardDisplayName(invite.userId);
     const grant = knownGuardGrants.find(item => item.userId === invite.userId);
+    const decision = accountInvite(message as any, invite.userId, channel.id)?.decision;
     const accepted = grant?.inviteNonce === invite.nonce;
-    const declined = declinedGuardInvites.includes(invite.nonce);
+    const declined = decision === "refuse" || declinedGuardInvites.includes(invite.nonce);
     const replaced = !accepted && newest !== null && newest !== message.id;
 
     if (replaced) {
@@ -67,14 +72,14 @@ export function GuardInviteCard({ message, channel }: { message: Message; channe
                                 : `While you're both in the same voice channel, you'll be able to: ${allowed}.`}
                 </span>
             </div>
-            {!accepted && (
+            {(!accepted || !declined) && (
                 <div className={cl("guard-invite-actions")}>
-                    <Button size="small" variant="primary" onClick={() => void acceptGuardInvite(settings.store, invite.userId, invite)}>
-                        {grant ? "Use this invite" : "Accept"}
-                    </Button>
+                    {!accepted && <Button size="small" variant="primary" onClick={() => void acceptGuardInvite(settings.store, invite.userId, invite)}>
+                        Accept
+                    </Button>}
                     {!declined && (
-                        <Button size="small" variant="secondary" onClick={() => declineGuardInvite(settings.store, invite.userId, invite.nonce)}>
-                            Decline
+                        <Button size="small" variant="secondary" onClick={() => void declineGuardInvite(settings.store, invite.userId, invite.nonce, invite)}>
+                            Refuse
                         </Button>
                     )}
                 </div>
