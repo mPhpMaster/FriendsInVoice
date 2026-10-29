@@ -1,0 +1,57 @@
+name: Verify platforms
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit to verify
+        required: true
+        default: main
+  push:
+    branches: [main, codex/account-guards-portability]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.9.0'
+      - name: Check Unix installers and rollback
+        run: |
+          /bin/bash -n install.sh install.command
+          node --test tests/installUnix.test.mjs
+      - name: Build and test BetterDiscord
+        working-directory: betterdiscord
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm test
+      - name: Set up matching Vencord source
+        run: |
+          git clone https://github.com/Vendicated/Vencord.git "$RUNNER_TEMP/Vencord"
+          git -C "$RUNNER_TEMP/Vencord" checkout 443688b5366a4d43e9868519f48a4544cd7520d4
+          mkdir -p "$RUNNER_TEMP/Vencord/src/userplugins"
+          cp -R friendsInVoice "$RUNNER_TEMP/Vencord/src/userplugins/friendsInVoice"
+          cd "$RUNNER_TEMP/Vencord"
+          pnpm install --frozen-lockfile
+      - name: Test shared protocol and build Vencord
+        run: |
+          export NODE_PATH="$RUNNER_TEMP/Vencord/node_modules"
+          "$RUNNER_TEMP/Vencord/node_modules/.bin/tsx" --test tests/*.test.ts
+          cd "$RUNNER_TEMP/Vencord"
+          pnpm exec tsc --noEmit
+          pnpm build

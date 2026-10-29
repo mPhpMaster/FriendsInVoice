@@ -11,21 +11,21 @@ import { addMessageAccessory, removeMessageAccessory } from "@api/MessageAccesso
 import { showNotification } from "@api/Notifications";
 import { isPluginEnabled } from "@api/PluginManager";
 import { addServerListElement, removeServerListElement, ServerListRenderPosition } from "@api/ServerList";
-import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classNameFactory } from "@utils/css";
-import definePlugin, { OptionType } from "@utils/types";
+import definePlugin from "@utils/types";
 import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
 import { applyAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
+import { onGuardAccountChannel, onGuardAccountReaction, startGuardAccountSync, stopGuardAccountSync, syncVoiceGuardAccess } from "./personalGuardsAccountSync";
 import { GuardInviteCard } from "./personalGuardsCard";
 import { GuardNotificationHost } from "./personalGuardsNotice";
 import { isGuardMessage } from "./personalGuardsProtocol";
 import { clearGuardRuntime, handleGuardMessage } from "./personalGuardsRuntime";
 import { PersonalGuardsTab } from "./personalGuardsTab";
-import type { GuardGrant, GuardInvite } from "./personalGuardsTypes";
+import { settings } from "./pluginSettings";
 import { SmartReplies } from "./smartReplies";
 import { UserContextPatch } from "./userContextMenu";
 import { useVoiceData } from "./voiceContent";
@@ -35,109 +35,12 @@ import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voice
 import { REPO_URL, showWhatsNew } from "./whatsNew";
 
 export { inList, isOnline, toggleInList } from "./notifications";
+export { settings } from "./pluginSettings";
 
-const VERSION = "1.17.0";
+const VERSION = "1.18.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
-
-export const settings = definePluginSettings({
-    notifyOnce: {
-        type: OptionType.BOOLEAN,
-        description: "Remove someone from \"Notify me when online\" after their first notification",
-        default: true,
-    },
-    smartReplies: {
-        type: OptionType.BOOLEAN,
-        description: "Suggest replies under the latest message someone sends you in a DM (click one to put it in the message box)",
-        default: true,
-    },
-    smartRepliesAi: {
-        type: OptionType.BOOLEAN,
-        description: "Add a \"✨ Smarter replies\" button that asks Claude (AI) for replies. Needs an API key below; when you click it, the recent messages of that chat are sent to Anthropic",
-        default: false,
-    },
-    anthropicApiKey: {
-        type: OptionType.STRING,
-        description: "Your Claude API key, from console.anthropic.com (saved in Vencord's settings on this computer)",
-        default: "",
-        placeholder: "sk-ant-...",
-    },
-    aiModel: {
-        type: OptionType.STRING,
-        description: "Claude model used for smarter replies",
-        default: "claude-opus-5-5",
-    },
-    checkForUpdates: {
-        type: OptionType.BOOLEAN,
-        description: "Show a notification when a new version of Friends in Voice is released",
-        default: true,
-    },
-    showWhatsNew: {
-        type: OptionType.BOOLEAN,
-        description: "After Friends in Voice updates, show what's new the next time Discord starts",
-        default: true,
-    },
-    stayInVoice: {
-        type: OptionType.BOOLEAN,
-        description: "Stay in voice when you're away: don't get moved to the server's AFK channel or dropped from a DM call",
-        default: false,
-        restartNeeded: true,
-    },
-    neverIdle: {
-        type: OptionType.BOOLEAN,
-        description: "Never go idle: keep your status when you step away from the computer",
-        default: false,
-        restartNeeded: true,
-    },
-    autoStatus: {
-        type: OptionType.BOOLEAN,
-        description: "Auto switch status: change your status when you join or leave a call (pick both statuses below)",
-        default: false,
-        onChange: () => void applyAutoStatus(),
-    },
-    statusInCall: {
-        type: OptionType.SELECT,
-        description: "Auto switch status: your status while you're in a voice channel or call",
-        options: statusOptions("online"),
-        onChange: () => void applyAutoStatus(),
-    },
-    statusOutsideCall: {
-        type: OptionType.SELECT,
-        description: "Auto switch status: your status when you're not in a call",
-        options: statusOptions("invisible"),
-        onChange: () => void applyAutoStatus(),
-    },
-    watchlist: {
-        type: OptionType.CUSTOM,
-        default: [] as string[],
-    },
-    notifyOnline: {
-        type: OptionType.CUSTOM,
-        default: [] as string[],
-    },
-    blacklist: {
-        type: OptionType.CUSTOM,
-        default: [] as string[],
-    },
-    notifyVoice: {
-        type: OptionType.CUSTOM,
-        default: [] as string[],
-    },
-    hidden: {
-        type: OptionType.CUSTOM,
-        default: [] as string[],
-    },
-    personalGuards: { type: OptionType.CUSTOM, default: [] as GuardGrant[] },
-    knownGuardGrants: { type: OptionType.CUSTOM, default: [] as GuardGrant[] },
-    pendingGuardInvites: { type: OptionType.CUSTOM, default: [] as GuardInvite[] },
-    declinedGuardInvites: { type: OptionType.CUSTOM, default: [] as string[] },
-    guardBlocks: { type: OptionType.CUSTOM, default: [] as { userId: string; until: number; }[] },
-    guardReplay: { type: OptionType.CUSTOM, default: [] as { nonce: string; createdAt: number; }[] },
-    guardPeerKeys: { type: OptionType.CUSTOM, default: [] as { userId: string; publicKey: string; }[] },
-    /** the account that kept the lists saved before they were split per account */
-    accountDataOwner: { type: OptionType.CUSTOM, default: "" },
-});
 
 // Discord's openPrivateChannel now takes { recipientIds }. Vencord's helper still passes a bare user id,
 // which Discord reads as "no recipients" and creates an empty group DM, so call Discord directly.
@@ -484,14 +387,20 @@ export default definePlugin({
         CONNECTION_OPEN() {
             startQuietPeriod();
             void loadAccount();
+            void startGuardAccountSync();
             setTimeout(() => void showWhatsNew(VERSION), 3000);
             void applyAutoStatus();
         },
         LOGOUT() {
+            stopGuardAccountSync();
             leaveAccount();
         },
+        CHANNEL_SELECT({ channelId }: { channelId?: string; }) { if (channelId) onGuardAccountChannel(channelId); },
+        MESSAGE_REACTION_ADD({ channelId, userId }: { channelId: string; userId: string; }) { onGuardAccountReaction(channelId, userId); },
+        MESSAGE_REACTION_REMOVE({ channelId, userId }: { channelId: string; userId: string; }) { onGuardAccountReaction(channelId, userId); },
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; oldChannelId?: string | null; }[]; }) {
             onVoiceStateUpdates(voiceStates);
+            syncVoiceGuardAccess();
             onVoiceLogUpdates(voiceStates);
             onAutoStatusVoiceUpdates(voiceStates);
         },
@@ -552,6 +461,7 @@ export default definePlugin({
         seedVoiceChannels();
         seedVoiceLog();
         startAccountData();
+        void startGuardAccountSync();
         PresenceStore.addChangeListener(onPresenceChange);
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
@@ -564,6 +474,7 @@ export default definePlugin({
     },
 
     stop() {
+        stopGuardAccountSync();
         stopAccountData();
         flushVoiceLog();
         clearGuardRuntime();

@@ -7,12 +7,13 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { app, type IpcMainInvokeEvent } from "electron";
 import { readFileSync as readOriginalFileSync } from "original-fs";
 
 import { selectReleaseAsset, validatePackage } from "./updatePackage";
+import { vencordRootFromArchive } from "./updatePaths";
 import type { ReleaseInfo, UpdateStatus } from "./updateTypes";
 import { isNewer } from "./updateVersion";
 
@@ -31,12 +32,7 @@ export function getUpdateStatus(_: IpcMainInvokeEvent): UpdateStatus {
 async function getVencordRoot(): Promise<string> {
     const asar = join(process.resourcesPath, "app.asar");
     const contents = readOriginalFileSync(asar).toString("utf8");
-    const patch = process.platform === "win32"
-        ? contents.match(/require\("([^"\r\n]+dist\\\\patcher\.js)"\)/)
-        : contents.match(/(\/[^"'`\r\n]+\/dist\/patcher\.js)/);
-    if (!patch) throw new Error("This Discord installation is not patched with Vencord source.");
-    const patcher = process.platform === "win32" ? JSON.parse(`"${patch[1]}"`) as string : patch[1];
-    const root = resolve(dirname(patcher), "..");
+    const { root, patcher } = vencordRootFromArchive(contents, process.platform);
     const packageFile = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     if (packageFile.name !== "vencord" || !existsSync(patcher)) throw new Error("The Vencord source directory was not found.");
     return root;
@@ -123,7 +119,7 @@ async function installFiles(root: string, files: Map<string, Uint8Array>, versio
 
 export async function installUpdate(_: IpcMainInvokeEvent, version: string, installedVersion: string): Promise<UpdateStatus> {
     if (busy) return { ...STATUS };
-    if (process.platform !== "win32" && process.platform !== "darwin") return { stage: "failed", message: "Automatic updates currently require Windows or macOS. Open the release page to update on this system.", version };
+    if (!["win32", "darwin", "linux"].includes(process.platform)) return { stage: "failed", message: "Automatic updates require Windows, macOS or Linux. Open the release page to update on this system.", version };
     if (!isNewer(version, installedVersion)) return { stage: "failed", message: "The selected version is not newer than the installed version.", version };
     busy = true;
     try {

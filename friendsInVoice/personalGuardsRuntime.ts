@@ -10,6 +10,9 @@ import { findByPropsLazy } from "@webpack";
 import { ChannelActionCreators, ChannelStore, DraftStore, DraftType, GuildMemberStore, GuildStore, MediaEngineStore, SelectedChannelStore, SelectedGuildStore, showToast, UserStore, VoiceStateStore } from "@webpack/common";
 
 import { openGuardsPage, openPrivateChannel, setPageOpen } from ".";
+import { isAccountDataLoaded } from "./accountData";
+import { decideGuardAccountInvite, refuseGuardAccountOwner, syncGuardOwner } from "./personalGuardsAccountSync";
+import { guardCommandRejection, reserveGuardCommand } from "./personalGuardsCommandChecks";
 import { getGuardKeys, openGuardPayload, publicKeyString, sealGuardPayload, validatePublicKey } from "./personalGuardsCrypto";
 import { createGuardDraftPreparer } from "./personalGuardsDraft";
 import { GUARD_ACTIONS, GUARD_LABELS, GUARD_VERBS, inviteSummary, isGuardMessage, makeCommand, makeGrantNotice, newGuardNonce, parseGuardMessage, serializeWire } from "./personalGuardsProtocol";
@@ -95,22 +98,26 @@ export async function acceptGuardInvite(store: GuardsStore, ownerId: string, inv
         sendError("This invite can't be used. Ask them to prepare a new one.");
         return;
     }
-    writeGuardSetting(store, "guardPeerKeys", [...store.guardPeerKeys.filter(item => item.userId !== ownerId), { userId: ownerId, publicKey: invite.publicKey }]);
-    writeGuardSetting(store, "knownGuardGrants", [...store.knownGuardGrants.filter(item => item.userId !== ownerId),
-        { userId: ownerId, actions: [...invite.actions], inviteNonce: invite.nonce }]);
-    writeGuardSetting(store, "pendingGuardInvites", store.pendingGuardInvites.filter(item => item.userId !== ownerId));
-    writeGuardSetting(store, "declinedGuardInvites", store.declinedGuardInvites.filter(nonce => nonce !== invite.nonce));
+    try { await decideGuardAccountInvite(invite, true); }
+    catch { sendError("Acceptance could not be saved to your account. Open the newest invitation in your DM and try Accept again."); return; }
     if (announce) showToast({ text: `You're ${guardDisplayName(ownerId)}'s Personal Guard. In the same voice channel, right-click them to use it.`, variant: "success" });
 }
 
-export function declineGuardInvite(store: GuardsStore, ownerId: string, nonce: string) {
-    writeGuardSetting(store, "pendingGuardInvites", store.pendingGuardInvites.filter(item => item.userId !== ownerId || item.nonce !== nonce));
-    writeGuardSetting(store, "declinedGuardInvites", [...store.declinedGuardInvites.filter(item => item !== nonce), nonce].slice(-50));
+export async function declineGuardInvite(store: GuardsStore, ownerId: string, nonce: string, invite = store.pendingGuardInvites.find(item => item.userId === ownerId && item.nonce === nonce)) {
+    if (!invite) { sendError("Open the invitation in your DM to refuse it."); return; }
+    try { await decideGuardAccountInvite(invite, false); }
+    catch { sendError("Refusal could not be saved to your account. Try Refuse again when connected."); }
+}
+
+export async function removeGuardAccountAccess(ownerId: string) {
+    try { await refuseGuardAccountOwner(ownerId); }
+    catch { sendError("Access could not be removed from your account. Reconnect and try Remove access again."); }
 }
 
 export function inviteFromMessage(message: IncomingMessage): GuardInvite | null {
     const wire = parseGuardMessage(message.content ?? "");
-    return wire?.type === "invite" ? { userId: message.author.id, actions: [...wire.actions], publicKey: wire.publicKey, nonce: wire.nonce } : null;
+    return wire?.type === "invite" ? { userId: message.author.id, actions: [...wire.actions], publicKey: wire.publicKey, nonce: wire.nonce,
+        messageId: message.id, channelId: message.channel_id } : null;
 }
 
 function peerKey(store: GuardsStore, userId: string): string | undefined {
@@ -170,6 +177,9 @@ export async function sendGuardGrant(store: GuardsStore, guardianId: string) {
 
 export async function sendGuardCommand(store: GuardsStore, ownerId: string, action: GuardAction) {
     const guardianId = UserStore.getCurrentUser()?.id;
+    if (!await syncGuardOwner(ownerId, true) || UserStore.getCurrentUser()?.id !== guardianId) {
+        sendError("Accept the newest invitation in your DM before using Personal Guard actions. Your account must be connected."); return;
+    }
     const grant = store.knownGuardGrants.find(item => item.userId === ownerId);
     if (!grant?.actions.includes(action)) { sendError("No saved access for this action. Ask the owner to invite you again."); return; }
     const key = peerKey(store, ownerId);
@@ -236,14 +246,10 @@ export async function handleGuardMessage(store: GuardsStore, message: IncomingMe
         if (!await validatePublicKey(wire.publicKey)) return;
         const current = store.knownGuardGrants.find(grant => grant.userId === senderId);
         if (current?.inviteNonce === wire.nonce) return;
-        // already their guard: a new invite from them only changes what they allow, so take it over directly
-        if (current) {
-            await acceptGuardInvite(store, senderId, { userId: senderId, publicKey: wire.publicKey, actions: [...wire.actions], nonce: wire.nonce }, false);
-            showNotification({ title: "Personal Guards", body: `${guardDisplayName(senderId)} changed what you can do: ${wire.actions.map(action => GUARD_LABELS[action].toLowerCase()).join(", ")}.` });
-            return;
-        }
+        // A changed invitation needs the guardian's own decision again; receiving it never implies acceptance.
+        if (current) writeGuardSetting(store, "knownGuardGrants", store.knownGuardGrants.filter(grant => grant.userId !== senderId));
         writeGuardSetting(store, "pendingGuardInvites", [...store.pendingGuardInvites.filter(item => item.userId !== senderId),
-            { userId: senderId, publicKey: wire.publicKey, actions: [...wire.actions], nonce: wire.nonce }]);
+            { userId: senderId, publicKey: wire.publicKey, actions: [...wire.actions], nonce: wire.nonce, messageId: message.id, channelId: message.channel_id }]);
         showNotification({
             title: "Personal Guards",
             body: `${guardDisplayName(senderId)} invited you to be their Personal Guard. Click to accept or decline it in your DM.`,
@@ -266,6 +272,7 @@ export async function handleGuardMessage(store: GuardsStore, message: IncomingMe
     const pinned = peerKey(store, senderId);
     let payload;
     try { payload = await openGuardPayload(wire, await getGuardKeys(), senderId, me); } catch { return; }
+    if (!isAccountDataLoaded(me)) return;
     if (!payload) {
         if (getGrant(store, senderId).length) sendError(`Could not verify a guard message from ${guardDisplayName(senderId)}. Ask them to use your newest invitation.`);
         return;
@@ -282,21 +289,15 @@ export async function handleGuardMessage(store: GuardsStore, message: IncomingMe
         showNotification({ title: "Personal Guards", body: `${guardDisplayName(senderId)} updated your guard access. Click to see your available actions.`, onClick: openGuardsPage });
         return;
     }
-    if (payload.ownerId !== me) { sendError("Guard command rejected: wrong account."); return; }
-    if (Math.abs(Date.now() - payload.createdAt) > 5 * 60_000) { sendError("Guard command expired. Check both devices' clocks and send a new one."); return; }
-    const grant = store.personalGuards.find(item => item.userId === senderId);
-    if (!grant?.actions.includes(payload.action)) { sendError("Guard command rejected: this action is not allowed for the sender."); return; }
-    if (grant.inviteNonce ? payload.inviteNonce !== grant.inviteNonce : !pinned || pinned !== wire.fromKey) {
-        sendError("Guard command rejected: invitation or secure key does not match. Send a new invitation."); return;
-    }
-    if (!sharesVoice(senderId)) { sendError("Guard command rejected: both people must be in the same voice channel."); return; }
-    if (store.guardBlocks.some(block => block.userId === senderId && block.until > Date.now())) { sendError("Guard commands from this person are temporarily blocked."); return; }
-    if (store.guardReplay.some(entry => entry.nonce === payload.nonce)) { sendError("Guard command rejected: duplicate message."); return; }
+    const rejection = guardCommandRejection(store, payload, {
+        ownerId: me, senderId, senderKey: wire.fromKey, pinnedKey: pinned, sharesVoice: sharesVoice(senderId), now: Date.now()
+    });
+    if (rejection) { sendError(`Guard command rejected: ${rejection}`); return; }
+    try { reserveGuardCommand(store, payload, senderId, Date.now()); }
+    catch { sendError("The command receipt could not be saved. No voice action was applied."); return; }
     let undo: (() => void) | null;
     try { undo = await applyAction(payload.action); } catch { sendError("Discord could not apply the requested voice action."); return; }
     if (!undo) { sendError("Discord voice controls are unavailable for this action."); return; }
-    writeGuardSetting(store, "guardReplay", [...store.guardReplay.filter(entry => Date.now() - entry.createdAt < 5 * 60_000)
-        .map(entry => ({ nonce: entry.nonce, createdAt: entry.createdAt })), { nonce: payload.nonce, createdAt: Date.now() }]);
     const event = { id: message.id, guardianId: senderId, action: payload.action, undo };
     for (const listener of eventListeners) listener(event);
     if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`, body: `${GUARD_LABELS[payload.action]} applied. Click to undo.`, permanent: true, onClick: undo });

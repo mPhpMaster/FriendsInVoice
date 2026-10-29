@@ -16,6 +16,7 @@ export function installUserMenu(api, view) {
                 api.Utils?.findInTree?.(tree, item => !!item?.user?.id, { walkable: ["props", "children"] })?.user;
             const id = user?.id;
             if (!id || id === view.bridge.currentId()) return;
+            void view.guards.account.sync(id);
             const known = view.guards.knownFor(id);
             const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter(action => known.includes(action)) : [];
             const guardItems = [
@@ -27,11 +28,10 @@ export function installUserMenu(api, view) {
                         view.open("guards");
                     }
                 },
-                { id: "fivbd-offer-guard", label: "Offer to guard (prepare secure key DM)", action: () => void view.guards.sendKey(id) },
-                ...available.map(action => ({
+                ...(available.length ? [{ type: "submenu", id: "fivbd-guard-actions", label: "Guard Actions", items: available.map(action => ({
                     id: `fivbd-guard-${action}`, label: `Prepare ${GUARD_LABELS[action]} DM`,
-                    action: () => void view.guards.sendCommand(id, action)
-                }))
+                    action: () => { view.close(); void view.guards.sendCommand(id, action); }
+                })) }] : [])
             ];
             const items = api.ContextMenu.buildMenuChildren([{
                 type: "group",

@@ -27,7 +27,12 @@ const storeKey = (id: string) => `FriendsInVoice_account_${id}`;
 
 let accountId: string | null = null;
 let loading: string | null = null;
+let loadTask: Promise<void> | undefined;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function isAccountDataLoaded(id: string): boolean {
+    return accountId === id && loading === null && UserStore.getCurrentUser()?.id === id;
+}
 
 // settings reads are proxies; IndexedDB and IPC need plain data
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? []));
@@ -56,12 +61,18 @@ function onSettingChange(_: unknown, path: string) {
 }
 
 /** loads the logged-in account's lists; call on start and whenever Discord connects (it may be another account) */
-export async function loadAccount() {
+export function loadAccount(): Promise<void> {
     const id = UserStore.getCurrentUser()?.id;
-    if (!id || id === accountId || id === loading) return;
+    if (!id || id === accountId) return Promise.resolve();
+    if (id === loading) return loadTask ?? Promise.resolve();
+    loading = id;
+    loadTask = loadAccountData(id);
+    return loadTask;
+}
+
+async function loadAccountData(id: string) {
     if (accountId) writeNow();
     accountId = null;
-    loading = id;
 
     // the very first account to load after this update keeps what was saved before; others start empty.
     // Without that, what's in the settings file was written by whichever account was open last.

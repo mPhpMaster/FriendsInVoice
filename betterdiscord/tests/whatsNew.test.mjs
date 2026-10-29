@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
 import { JSDOM } from "jsdom";
+import { fileURLToPath } from "node:url";
 import { memoryStore } from "./memoryStore.mjs";
 
 // whatsNew.js imports the Vencord plugin's TypeScript, so bundle it the way build.mjs does
-const bundled = await build({ entryPoints: [new URL("../src/whatsNew.js", import.meta.url).pathname], bundle: true, format: "esm", write: false });
+const bundled = await build({ entryPoints: [fileURLToPath(new URL("../src/whatsNew.js", import.meta.url))], bundle: true, format: "esm", write: false });
 const { WhatsNew } = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`);
 
 const NOTES = "## What's new\n\n**🆕 Thing** ([#9](https://github.com/mPhpMaster/FriendsInVoice/pull/9))\n- It works.\n\n## Update\n\nReplace the file.\n";
