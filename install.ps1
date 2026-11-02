@@ -6,7 +6,7 @@
     - If Vencord (built from source) isn't installed yet, it downloads and builds it, adds the plugin,
       patches Discord and opens it.
     - If Vencord is already installed, it only adds the plugin to it.
-    - If the plugin is already installed, it asks whether to uninstall it (or update it instead).
+    - If the plugin is already installed, it offers to reinstall/update it (default), uninstall it, or cancel.
 
     Custom plugins can't be added to the regular prebuilt Vencord, which is why Vencord is built from source.
 
@@ -178,8 +178,14 @@ if ($DetectOnly) { return }
 
 # ---------- plugin already installed: uninstall or update ----------
 
+$reinstall = $false
 if ($pluginInstalled) {
-    if (Ask "$DisplayName is already installed. Do you want to UNINSTALL it?" $false) {
+    Write-Host "$DisplayName is already installed. What do you want to do?"
+    Write-Host "  [1] Reinstall / update it: a fresh copy from this folder, rebuilt and re-linked to Discord (your settings stay)"
+    Write-Host "  [2] Uninstall it"
+    Write-Host "  [3] Cancel"
+    $choice = (Read-Host "Choose [1/2/3] (default 1)").Trim()
+    if ($choice -eq "2") {
         Info "Removing the plugin..."
         Remove-Item -Recurse -Force $pluginDir
         Ensure-Tools
@@ -188,11 +194,11 @@ if ($pluginInstalled) {
         Restart-Discord
         return
     }
-
-    if (-not (Ask "Update it to the version in this folder instead?" $true)) {
+    if ($choice -and $choice -ne "1") {
         Warn "Nothing changed."
         return
     }
+    $reinstall = $true
 }
 
 # ---------- install ----------
@@ -207,12 +213,14 @@ if (-not $vencordInstalled) {
 
 Info "Adding $DisplayName to Vencord..."
 New-Item -ItemType Directory -Force (Split-Path $pluginDir) | Out-Null
+# start from an empty folder so files removed in this version don't linger
+if ($reinstall) { Remove-Item -Recurse -Force $pluginDir }
 New-Item -ItemType Directory -Force $pluginDir | Out-Null
 Copy-Item -Force (Join-Path $PluginSrc "*") $pluginDir
 
 Build-Vencord $VencordDir
 
-if (-not $discordPatched) { Inject-Vencord $VencordDir }
+if ($reinstall -or -not $discordPatched) { Inject-Vencord $VencordDir }
 
 Write-Host ""
 Ok "Done!"

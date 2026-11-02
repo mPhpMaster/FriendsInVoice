@@ -5,7 +5,7 @@
 #  - If Vencord (built from source) isn't installed yet, it downloads and builds it, adds the plugin,
 #    patches Discord and restarts it.
 #  - If Vencord is already installed, it only adds the plugin to it.
-#  - If the plugin is already installed, it asks whether to uninstall it (or update it instead).
+#  - If the plugin is already installed, it offers to reinstall/update it (default), uninstall it, or cancel.
 #
 # Custom plugins can't be added to the regular prebuilt Vencord, which is why Vencord is built from source.
 #
@@ -190,7 +190,15 @@ build_vencord() {
             pnpm install --frozen-lockfile
         fi
         info "Building Vencord..."
-        pnpm build
+        # run Vencord's plain "node ..." build script with node directly, so a broken pnpm/corepack launcher can't stop it
+        local script
+        script="$(node -p 'const p = require("./package.json"); (p.scripts && p.scripts.build) || ""' 2>/dev/null || true)"
+        if printf '%s' "$script" | grep -qE '^node( +[A-Za-z0-9_./=:@+-]+)+$'; then
+            # shellcheck disable=SC2086
+            node ${script#node }
+        else
+            pnpm build
+        fi
     ) || die "Building Vencord failed (see the messages above)."
 }
 
@@ -244,7 +252,7 @@ inject_vencord() {
 
         die "Discord still loads the old Vencord. macOS applies the new permission only after Terminal restarts:
   1. Quit Terminal (Cmd+Q) and open it again.
-  2. Run this installer again (answer N to uninstall, then Y to update)."
+  2. Run this installer again and choose 1 (Reinstall / update)."
     fi
 
     die "Patching Discord didn't take effect: Discord still loads Vencord from '$(patched_vencord_dir "$DISCORD_RES")'.
@@ -286,21 +294,28 @@ echo
 
 # ---------- plugin already installed: uninstall or update ----------
 
+REINSTALL=0
 if [ "$PLUGIN_INSTALLED" = 1 ]; then
-    if ask "$DISPLAY_NAME is already installed. Do you want to UNINSTALL it?" n; then
-        info "Removing the plugin..."
-        rm -rf "$PLUGIN_DIR"
-        ensure_tools
-        build_vencord "$VENCORD_DIR"
-        ok "$DISPLAY_NAME was uninstalled. (Vencord itself is still installed.)"
-        restart_discord
-        exit 0
-    fi
-
-    if ! ask "Update it to the version in this folder instead?" y; then
-        warn "Nothing changed."
-        exit 0
-    fi
+    echo "$DISPLAY_NAME is already installed. What do you want to do?"
+    echo "  [1] Reinstall / update it: a fresh copy from this folder, rebuilt and re-linked to Discord (your settings stay)"
+    echo "  [2] Uninstall it"
+    echo "  [3] Cancel"
+    printf 'Choose [1/2/3] (default 1): '
+    read -r choice </dev/tty || choice=""
+    choice="$(printf '%s' "$choice" | tr -d '[:space:]')"
+    case "$choice" in
+        ""|1) REINSTALL=1 ;;
+        2)
+            info "Removing the plugin..."
+            rm -rf "$PLUGIN_DIR"
+            ensure_tools
+            build_vencord "$VENCORD_DIR"
+            ok "$DISPLAY_NAME was uninstalled. (Vencord itself is still installed.)"
+            restart_discord
+            exit 0
+            ;;
+        *) warn "Nothing changed."; exit 0 ;;
+    esac
 fi
 
 # ---------- install ----------
@@ -332,7 +347,7 @@ if ! (build_vencord "$VENCORD_DIR"); then
 fi
 ok "Backup of the previous plugin, if any: $INSTALL_WORK/previous"
 
-[ "$DISCORD_PATCHED" = 1 ] || inject_vencord "$VENCORD_DIR"
+if [ "$REINSTALL" = 1 ] || [ "$DISCORD_PATCHED" = 0 ]; then inject_vencord "$VENCORD_DIR"; fi
 
 echo
 ok "Done!"
