@@ -13,7 +13,7 @@ import { app, type IpcMainInvokeEvent } from "electron";
 import { readFileSync as readOriginalFileSync } from "original-fs";
 
 import { selectReleaseAsset, validatePackage } from "./updatePackage";
-import { vencordRootFromArchive } from "./updatePaths";
+import { directBuildArgs, vencordRootFromArchive } from "./updatePaths";
 import type { ReleaseInfo, UpdateStatus } from "./updateTypes";
 import { isNewer } from "./updateVersion";
 
@@ -38,11 +38,10 @@ async function getVencordRoot(): Promise<string> {
     return root;
 }
 
-async function runBuild(root: string): Promise<void> {
-    const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-    await new Promise<void>((done, fail) => {
+function runCommand(root: string, command: string, args: string[], shell: boolean): Promise<void> {
+    return new Promise<void>((done, fail) => {
         const env = { ...process.env, PATH: process.platform === "darwin" ? `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ""}` : process.env.PATH };
-        const child = spawn(command, ["build"], { cwd: root, env, windowsHide: true, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"] });
+        const child = spawn(command, args, { cwd: root, env, windowsHide: true, shell, stdio: ["ignore", "pipe", "pipe"] });
         const timeout = setTimeout(() => child.kill(), 5 * 60 * 1000);
         let output = "";
         for (const stream of [child.stdout, child.stderr]) stream.on("data", chunk => {
@@ -54,6 +53,21 @@ async function runBuild(root: string): Promise<void> {
             code === 0 ? done() : fail(new Error(`Vencord build failed (exit ${code}). ${output.slice(-800)}`));
         });
     });
+}
+
+async function runBuild(root: string): Promise<void> {
+    const packageFile = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    const args = directBuildArgs(packageFile?.scripts?.build);
+    if (args) {
+        try {
+            return await runCommand(root, "node", args, false);
+        } catch (error) {
+            // node isn't on Discord's PATH: let pnpm find it
+            if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+        }
+    }
+    const windows = process.platform === "win32";
+    return runCommand(root, windows ? "pnpm.cmd" : "pnpm", ["build"], windows);
 }
 
 async function fetchPackage(version: string): Promise<Map<string, Uint8Array>> {
@@ -109,7 +123,7 @@ async function installFiles(root: string, files: Map<string, Uint8Array>, versio
         if (replaced) {
             await rm(destination, { recursive: true, force: true });
             await rename(backup, destination);
-            try { await runBuild(root); } catch { throw new Error(`Update failed and source was restored, but rebuilding the previous version also failed: ${String(error)}`); }
+            try { await runBuild(root); } catch (rebuildError) { throw new Error(`Update failed and source was restored, but rebuilding the previous version also failed: ${String(rebuildError)}`); }
         }
         throw error;
     } finally {

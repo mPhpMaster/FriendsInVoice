@@ -16,3 +16,14 @@ export function vencordRootFromArchive(contents: string, platform: NodeJS.Platfo
     if (!paths.isAbsolute(patcher) || /[\r\n\0]/.test(patcher)) throw new Error("The Vencord patcher path is invalid.");
     return { patcher, root: paths.resolve(paths.dirname(patcher), "..") };
 }
+
+// Vencord's "build" script is a plain `node …` command. Running it with node directly skips the pnpm launcher,
+// which breaks on some Windows setups (a stale corepack shim fails with MODULE_NOT_FOUND before anything builds).
+// Returns node's arguments, or null when the script needs a shell (quotes, &&, pipes, …) and must go through pnpm.
+export function directBuildArgs(script: unknown): string[] | null {
+    if (typeof script !== "string") return null;
+    const parts = script.trim().split(/\s+/);
+    if (parts[0] !== "node" || parts.length < 2) return null;
+    const args = parts.slice(1);
+    return args.every(arg => /^[\w.\/=:@+-]+$/.test(arg)) ? args : null;
+}

@@ -119,8 +119,16 @@ function Build-Vencord($dir) {
             if ($LASTEXITCODE) { throw "pnpm install failed." }
         }
         Info "Building Vencord..."
-        pnpm build
-        if ($LASTEXITCODE) { throw "pnpm build failed." }
+        # run Vencord's plain "node ..." build script with node directly: a broken pnpm/corepack launcher
+        # (MODULE_NOT_FOUND under AppData\Local\node\corepack) can't stop the build then
+        $buildScript = (Get-Content (Join-Path $dir "package.json") -Raw | ConvertFrom-Json).scripts.build
+        if ($buildScript -match '^node( +[\w./=:@+-]+)+$') {
+            $nodeArgs = $buildScript.Substring(5).Trim() -split ' +'
+            node @nodeArgs
+        } else {
+            pnpm build
+        }
+        if ($LASTEXITCODE) { throw "Building Vencord failed." }
     } finally { Pop-Location }
 }
 
