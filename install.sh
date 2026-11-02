@@ -211,7 +211,7 @@ build_vencord() {
         else
             pnpm build
         fi
-    ) || die "Building Vencord failed (see the messages above)."
+    ) || die "Building Vencord failed (see the messages above). Run repair.sh (Mac: repair.command) from this folder: it fixes pnpm, Vencord's dependencies and plugins that break the build."
 }
 
 quit_discord() {
