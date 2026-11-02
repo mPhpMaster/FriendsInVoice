@@ -1,3 +1,4 @@
+import { GUARD_PASSIVE_PAGES } from "../../friendsInVoice/personalGuardsAccount.ts";
 import { GUARD_ACTIONS, GUARD_LABELS } from "../../friendsInVoice/personalGuardsProtocol.ts";
 
 function listItem(view, id, key, addText, removeText) {
@@ -16,7 +17,7 @@ export function installUserMenu(api, view) {
                 api.Utils?.findInTree?.(tree, item => !!item?.user?.id, { walkable: ["props", "children"] })?.user;
             const id = user?.id;
             if (!id || id === view.bridge.currentId()) return;
-            void view.guards.account.sync(id);
+            void view.guards.account.sync(id, GUARD_PASSIVE_PAGES);
             const known = view.guards.knownFor(id);
             const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter(action => known.includes(action)) : [];
             const guardItems = [

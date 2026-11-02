@@ -7,7 +7,7 @@
 import { ChannelStore, RestAPI, SelectedChannelStore, UserStore, VoiceStateStore } from "@webpack/common";
 
 import { isAccountDataLoaded, loadAccount } from "./accountData";
-import { accountInvite, applyGuardAccountSource, findGuardAccountSource, saveGuardAccountDecision } from "./personalGuardsAccount";
+import { accountInvite, applyGuardAccountSource, findGuardAccountSource, GUARD_HISTORY_PAGES, GUARD_PASSIVE_PAGES, GUARD_STARTUP_DMS, saveGuardAccountDecision } from "./personalGuardsAccount";
 import type { GuardAccountBridge, GuardAccountMessage } from "./personalGuardsAccountTypes";
 import { removeGuardAccess } from "./personalGuardsSettings";
 import type { GuardInvite } from "./personalGuardsTypes";
@@ -17,7 +17,6 @@ const pending = new Map<string, Promise<boolean>>();
 const checked = new Map<string, number>();
 let running = false;
 let epoch = 0;
-let timer: ReturnType<typeof setInterval> | undefined;
 
 const bridge: GuardAccountBridge = {
     currentAccount: () => {
@@ -47,7 +46,7 @@ function applyCurrentSource(source: NonNullable<Awaited<ReturnType<typeof findGu
     if (!newer) applyGuardAccountSource(settings.store, source);
 }
 
-export function syncGuardOwner(ownerId: string, force = false, pages = Number.POSITIVE_INFINITY): Promise<boolean> {
+export function syncGuardOwner(ownerId: string, force = false, pages = GUARD_HISTORY_PAGES): Promise<boolean> {
     const account = bridge.currentAccount();
     const channelId = ChannelStore.getDMFromUserId(ownerId);
     if (!account || !channelId || ownerId === account || !bridge.isDM(channelId, ownerId)) return Promise.resolve(false);
@@ -94,43 +93,40 @@ export async function hydrateGuardAccountMessage(message: GuardAccountMessage) {
     const source = accountInvite(message, message.author.id, message.channel_id);
     if (!source) return;
     // The message is a read-only hint. Verify its newest server state before restoring access.
-    await syncGuardOwner(source.invite.userId, false);
+    await syncGuardOwner(source.invite.userId, false, GUARD_PASSIVE_PAGES);
 }
 
 export function onGuardAccountReaction(channelId: string, userId: string) {
     if (userId !== bridge.currentAccount()) return;
     const channel = ChannelStore.getChannel(channelId);
-    if (channel?.isDM() && channel.recipients?.[0]) void syncGuardOwner(channel.recipients[0], true);
+    if (channel?.isDM() && channel.recipients?.[0]) void syncGuardOwner(channel.recipients[0], true, GUARD_PASSIVE_PAGES);
 }
 
 export function onGuardAccountChannel(channelId: string) {
     const channel = ChannelStore.getChannel(channelId);
-    if (channel?.isDM() && channel.recipients?.[0]) void syncGuardOwner(channel.recipients[0]);
+    if (channel?.isDM() && channel.recipients?.[0]) void syncGuardOwner(channel.recipients[0], false, GUARD_PASSIVE_PAGES);
 }
 
 export function syncVoiceGuardAccess() {
     const channelId = SelectedChannelStore.getVoiceChannelId();
     if (!channelId) return;
     for (const userId of Object.keys(VoiceStateStore.getVoiceStatesForChannel(channelId) ?? {}).slice(0, 20))
-        void syncGuardOwner(userId);
+        void syncGuardOwner(userId, false, GUARD_PASSIVE_PAGES);
 }
 
 export async function startGuardAccountSync() {
     running = true;
     const generation = ++epoch;
-    clearInterval(timer);
     await loadAccount();
     const account = bridge.currentAccount();
     if (!account || generation !== epoch) return;
-    timer = setInterval(() => {
-        for (const grant of settings.store.knownGuardGrants) void syncGuardOwner(grant.userId, true, 1);
-        onGuardAccountChannel(SelectedChannelStore.getChannelId());
-    }, 60_000);
+    // No background polling: after this one startup pass, lookups only follow what you do (open a DM,
+    // receive a guard message, react, join voice, use a guard action).
     syncVoiceGuardAccess();
-    const channels = ChannelStore.getSortedPrivateChannels().filter(channel => channel.isDM()).slice(0, 20);
+    const channels = ChannelStore.getSortedPrivateChannels().filter(channel => channel.isDM()).slice(0, GUARD_STARTUP_DMS);
     for (const channel of channels) {
         if (generation !== epoch || bridge.currentAccount() !== account) break;
-        if (channel.recipients[0]) await syncGuardOwner(channel.recipients[0], false, 1);
+        if (channel.recipients[0]) await syncGuardOwner(channel.recipients[0], false, GUARD_PASSIVE_PAGES);
         await new Promise(resolve => setTimeout(resolve, 250));
     }
     onGuardAccountChannel(SelectedChannelStore.getChannelId());
@@ -139,7 +135,6 @@ export async function startGuardAccountSync() {
 export function stopGuardAccountSync() {
     running = false;
     epoch++;
-    clearInterval(timer);
     pending.clear();
     checked.clear();
 }

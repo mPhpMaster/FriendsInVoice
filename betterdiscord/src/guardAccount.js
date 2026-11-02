@@ -1,4 +1,4 @@
-import { applyGuardAccountSource, findGuardAccountSource, saveGuardAccountDecision } from "../../friendsInVoice/personalGuardsAccount.ts";
+import { applyGuardAccountSource, findGuardAccountSource, GUARD_HISTORY_PAGES, GUARD_PASSIVE_PAGES, GUARD_STARTUP_DMS, saveGuardAccountDecision } from "../../friendsInVoice/personalGuardsAccount.ts";
 
 export class GuardAccountAccess {
     constructor(bridge, data, changed) {
@@ -18,7 +18,7 @@ export class GuardAccountAccess {
         };
     }
     stop() { this.active = false; this.pending.clear(); }
-    async sync(ownerId, pages = Infinity) {
+    async sync(ownerId, pages = GUARD_HISTORY_PAGES) {
         const account = this.bridge.currentAccount();
         const channelId = this.discord.channelStore?.getDMFromUserId?.(ownerId);
         if (!account || !channelId) return false;
@@ -56,16 +56,16 @@ export class GuardAccountAccess {
     async refresh() {
         const account = this.bridge.currentAccount();
         const channels = this.discord.channelStore?.getSortedPrivateChannels?.() ?? [];
-        for (const channel of channels.filter(item => this.discord.isDm(item)).slice(0, 20)) {
+        for (const channel of channels.filter(item => this.discord.isDm(item)).slice(0, GUARD_STARTUP_DMS)) {
             if (!account || account !== this.bridge.currentAccount()) return;
-            if (channel.recipients?.[0]) await this.sync(channel.recipients[0], 1);
+            if (channel.recipients?.[0]) await this.sync(channel.recipients[0], GUARD_PASSIVE_PAGES);
             await new Promise(resolve => setTimeout(resolve, 250));
         }
         this.onChannel(this.discord.selectedChannel());
     }
     onChannel(channelId) {
         const channel = this.discord.channel(channelId);
-        if (this.discord.isDm(channel) && channel.recipients?.[0]) void this.sync(channel.recipients[0]);
+        if (this.discord.isDm(channel) && channel.recipients?.[0]) void this.sync(channel.recipients[0], GUARD_PASSIVE_PAGES);
     }
     onReaction(event) {
         if (event.userId === this.bridge.currentAccount()) this.onChannel(event.channelId);
