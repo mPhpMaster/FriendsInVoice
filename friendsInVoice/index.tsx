@@ -37,7 +37,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.18.4";
+const VERSION = "1.18.5";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");

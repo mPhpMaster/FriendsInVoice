@@ -44,7 +44,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           git archive --format=zip -o "$RUNNER_TEMP/out/FriendsInVoice-v$VERSION.zip" HEAD \
-            friendsInVoice install.bat install.command install.ps1 install.sh README.md README.ar.md LICENSE CONTRIBUTING.md
+            friendsInVoice install.bat install.command install.ps1 install.sh repair.bat repair.command repair.sh repair.mjs README.md README.ar.md LICENSE CONTRIBUTING.md
           cp betterdiscord/FriendsInVoice.plugin.js "$RUNNER_TEMP/out/"
           git show "origin/main:.github/release-notes/v$VERSION.md" > "$RUNNER_TEMP/notes.md"
 
