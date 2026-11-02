@@ -41,11 +41,18 @@ export function applyGuardAccountSource(store: GuardsStore, source: GuardAccount
         : store.declinedGuardInvites.filter(item => item !== invite.nonce));
 }
 
-export async function findGuardAccountSource(bridge: GuardAccountBridge, ownerId: string, channelId: string, pages = Number.POSITIVE_INFINITY): Promise<GuardAccountSource | null> {
+// Most DM history pages (100 messages each) a guard lookup reads. Keeps API use small and bounded.
+export const GUARD_HISTORY_PAGES = 10;
+// Lookups that run without a click (opening a DM, a reaction, joining voice, startup) read one page.
+export const GUARD_PASSIVE_PAGES = 1;
+// How many recent DMs are checked when Discord starts.
+export const GUARD_STARTUP_DMS = 5;
+
+export async function findGuardAccountSource(bridge: GuardAccountBridge, ownerId: string, channelId: string, pages = GUARD_HISTORY_PAGES): Promise<GuardAccountSource | null> {
     const account = bridge.currentAccount();
     if (!account || !isUserId(ownerId) || ownerId === account || !bridge.isDM(channelId, ownerId)) return null;
     let before: string | undefined;
-    for (let page = 0; page < pages; page++) {
+    for (let page = 0; page < Math.min(pages, GUARD_HISTORY_PAGES); page++) {
         const messages = await bridge.fetchPage(channelId, before);
         if (bridge.currentAccount() !== account) return null;
         const ordered = messages.filter(message => isUserId(message.id)).sort((a, b) => BigInt(a.id) > BigInt(b.id) ? -1 : 1);

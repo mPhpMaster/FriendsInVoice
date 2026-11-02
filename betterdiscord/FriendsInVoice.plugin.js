@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.18.5
+ * @version 1.18.6
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -796,11 +796,14 @@ function applyGuardAccountSource(store, source) {
   ]);
   writeGuardSetting(store, "declinedGuardInvites", decision === "refuse" ? [...store.declinedGuardInvites.filter((item) => item !== invite.nonce), invite.nonce].slice(-50) : store.declinedGuardInvites.filter((item) => item !== invite.nonce));
 }
-async function findGuardAccountSource(bridge, ownerId, channelId, pages = Number.POSITIVE_INFINITY) {
+var GUARD_HISTORY_PAGES = 10;
+var GUARD_PASSIVE_PAGES = 1;
+var GUARD_STARTUP_DMS = 5;
+async function findGuardAccountSource(bridge, ownerId, channelId, pages = GUARD_HISTORY_PAGES) {
   const account = bridge.currentAccount();
   if (!account || !isUserId2(ownerId) || ownerId === account || !bridge.isDM(channelId, ownerId)) return null;
   let before;
-  for (let page = 0; page < pages; page++) {
+  for (let page = 0; page < Math.min(pages, GUARD_HISTORY_PAGES); page++) {
     const messages = await bridge.fetchPage(channelId, before);
     if (bridge.currentAccount() !== account) return null;
     const ordered = messages.filter((message) => isUserId2(message.id)).sort((a, b) => BigInt(a.id) > BigInt(b.id) ? -1 : 1);
@@ -850,7 +853,7 @@ var GuardAccountAccess = class {
     this.active = false;
     this.pending.clear();
   }
-  async sync(ownerId, pages = Infinity) {
+  async sync(ownerId, pages = GUARD_HISTORY_PAGES) {
     const account = this.bridge.currentAccount();
     const channelId = this.discord.channelStore?.getDMFromUserId?.(ownerId);
     if (!account || !channelId) return false;
@@ -893,16 +896,16 @@ var GuardAccountAccess = class {
   async refresh() {
     const account = this.bridge.currentAccount();
     const channels = this.discord.channelStore?.getSortedPrivateChannels?.() ?? [];
-    for (const channel of channels.filter((item) => this.discord.isDm(item)).slice(0, 20)) {
+    for (const channel of channels.filter((item) => this.discord.isDm(item)).slice(0, GUARD_STARTUP_DMS)) {
       if (!account || account !== this.bridge.currentAccount()) return;
-      if (channel.recipients?.[0]) await this.sync(channel.recipients[0], 1);
+      if (channel.recipients?.[0]) await this.sync(channel.recipients[0], GUARD_PASSIVE_PAGES);
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     this.onChannel(this.discord.selectedChannel());
   }
   onChannel(channelId) {
     const channel = this.discord.channel(channelId);
-    if (this.discord.isDm(channel) && channel.recipients?.[0]) void this.sync(channel.recipients[0]);
+    if (this.discord.isDm(channel) && channel.recipients?.[0]) void this.sync(channel.recipients[0], GUARD_PASSIVE_PAGES);
   }
   onReaction(event) {
     if (event.userId === this.bridge.currentAccount()) this.onChannel(event.channelId);
@@ -1111,7 +1114,7 @@ function installUserMenu(api, view) {
       const user = props?.user ?? props?.contextMenuAPIArguments?.[0]?.user ?? instance?.props?.user ?? tree?.props?.user ?? tree?.props?.contextMenuAPIArguments?.[0]?.user ?? api.Utils?.findInTree?.(tree, (item) => !!item?.user?.id, { walkable: ["props", "children"] })?.user;
       const id = user?.id;
       if (!id || id === view.bridge.currentId()) return;
-      void view.guards.account.sync(id);
+      void view.guards.account.sync(id, GUARD_PASSIVE_PAGES);
       const known = view.guards.knownFor(id);
       const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter((action) => known.includes(action)) : [];
       const guardItems = [

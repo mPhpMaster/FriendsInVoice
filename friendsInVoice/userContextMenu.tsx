@@ -9,6 +9,7 @@ import type { User } from "@vencord/discord-types";
 import { Menu, UserStore } from "@webpack/common";
 
 import { inList, selfMenuItems, settings, toggleInList } from ".";
+import { GUARD_PASSIVE_PAGES } from "./personalGuardsAccount";
 import { syncGuardOwner } from "./personalGuardsAccountSync";
 import { openGuardModal } from "./personalGuardsModal";
 import { GUARD_ACTIONS, GUARD_VERBS } from "./personalGuardsProtocol";
@@ -21,7 +22,7 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
         return;
     }
 
-    void syncGuardOwner(user.id);
+    void syncGuardOwner(user.id, false, GUARD_PASSIVE_PAGES);
     const watched = inList("watchlist", user.id);
     const notifyVoice = inList("notifyVoice", user.id);
     const notify = inList("notifyOnline", user.id);
