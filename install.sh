@@ -182,13 +182,25 @@ is_vencord_source() {
     [ -n "${1:-}" ] && [ -f "$1/package.json" ] && grep -qE '"name"[[:space:]]*:[[:space:]]*"vencord"' "$1/package.json"
 }
 
+# Vencord's dependencies change when Vencord updates, so install them every time (quick when nothing changed).
+# A broken pnpm launcher (corepack's cache missing files) can't stop it: retry with an empty corepack cache,
+# then with the exact pnpm version through npx. Runs inside the Vencord folder.
+install_vencord_deps() {
+    if [ -d node_modules ]; then info "Installing Vencord's dependencies..."
+    else info "Installing Vencord's dependencies (first time, takes a few minutes)..."; fi
+    pnpm install --frozen-lockfile && return 0
+    warn "pnpm didn't work. Retrying with a fresh corepack cache..."
+    COREPACK_HOME="${TMPDIR:-/tmp}/friends-in-voice-corepack" pnpm install --frozen-lockfile && return 0
+    local version
+    version="$(node -p 'const m = /^pnpm@([0-9][^+]*)/.exec(require("./package.json").packageManager || ""); m ? m[1] : "latest"' 2>/dev/null || echo latest)"
+    warn "Still failing. Trying pnpm $version through npx..."
+    npx --yes "pnpm@$version" install --frozen-lockfile
+}
+
 build_vencord() {
     (
         cd "$1"
-        if [ ! -d node_modules ]; then
-            info "Installing Vencord's dependencies (first time only, takes a few minutes)..."
-            pnpm install --frozen-lockfile
-        fi
+        install_vencord_deps
         info "Building Vencord..."
         # run Vencord's plain "node ..." build script with node directly, so a broken pnpm/corepack launcher can't stop it
         local script
