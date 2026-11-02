@@ -37,7 +37,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.18.0";
+const VERSION = "1.18.1";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -170,7 +170,10 @@ function FriendsInVoicePage() {
         window.addEventListener("keydown", onKey);
         window.addEventListener("resize", onResize);
         nav?.addEventListener("click", onNavClick, true);
+        // a running Activity (its iframe sits in a layer above the app) would cover the page: hide it while the page is open
+        document.body.classList.add(cl("page-open"));
         return () => {
+            document.body.classList.remove(cl("page-open"));
             window.removeEventListener("keydown", onKey);
             window.removeEventListener("resize", onResize);
             nav?.removeEventListener("click", onNavClick, true);
