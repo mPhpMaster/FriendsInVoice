@@ -123,9 +123,10 @@ function Install-VencordDeps($dir) {
     if (Invoke-Pnpm @("install", "--frozen-lockfile")) { return }
 
     Warn "pnpm didn't work. Retrying with a fresh corepack cache..."
-    $oldHome = $env:COREPACK_HOME
+    $oldHome = $env:COREPACK_HOME; $oldPrompt = $env:COREPACK_ENABLE_DOWNLOAD_PROMPT
     $env:COREPACK_HOME = Join-Path ([IO.Path]::GetTempPath()) "friends-in-voice-corepack"
-    try { if (Invoke-Pnpm @("install", "--frozen-lockfile")) { return } } finally { $env:COREPACK_HOME = $oldHome }
+    $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"  # download the pnpm version Vencord asks for without a Y/n question
+    try { if (Invoke-Pnpm @("install", "--frozen-lockfile")) { return } } finally { $env:COREPACK_HOME = $oldHome; $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = $oldPrompt }
 
     $pm = (Get-Content (Join-Path $dir "package.json") -Raw | ConvertFrom-Json).packageManager
     $version = if ($pm -match '^pnpm@([0-9][^+]*)') { $Matches[1] } else { "latest" }

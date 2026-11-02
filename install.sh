@@ -190,7 +190,7 @@ install_vencord_deps() {
     else info "Installing Vencord's dependencies (first time, takes a few minutes)..."; fi
     pnpm install --frozen-lockfile && return 0
     warn "pnpm didn't work. Retrying with a fresh corepack cache..."
-    COREPACK_HOME="${TMPDIR:-/tmp}/friends-in-voice-corepack" pnpm install --frozen-lockfile && return 0
+    COREPACK_HOME="${TMPDIR:-/tmp}/friends-in-voice-corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile && return 0
     local version
     version="$(node -p 'const m = /^pnpm@([0-9][^+]*)/.exec(require("./package.json").packageManager || ""); m ? m[1] : "latest"' 2>/dev/null || echo latest)"
     warn "Still failing. Trying pnpm $version through npx..."
