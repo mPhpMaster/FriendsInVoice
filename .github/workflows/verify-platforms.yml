@@ -32,8 +32,8 @@ jobs:
           version: '11.9.0'
       - name: Check Unix installers and rollback
         run: |
-          /bin/bash -n install.sh install.command
-          node --test tests/installUnix.test.mjs
+          /bin/bash -n install.sh install.command repair.sh repair.command
+          node --test tests/installUnix.test.mjs tests/repair.test.mjs
       - name: Build and test BetterDiscord
         working-directory: betterdiscord
         run: |

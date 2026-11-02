@@ -149,7 +149,7 @@ function Build-Vencord($dir) {
         } else {
             pnpm build
         }
-        if ($LASTEXITCODE) { throw "Building Vencord failed." }
+        if ($LASTEXITCODE) { throw "Building Vencord failed. Run repair.bat from this folder: it fixes pnpm, Vencord's dependencies and plugins that break the build." }
     } finally { Pop-Location }
 }
 
