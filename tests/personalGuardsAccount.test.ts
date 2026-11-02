@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { accountInvite, applyGuardAccountSource, findGuardAccountSource, GUARD_ACCEPT, GUARD_REFUSE, saveGuardAccountDecision } from "../friendsInVoice/personalGuardsAccount";
+import { accountInvite, applyGuardAccountSource, findGuardAccountSource, GUARD_ACCEPT, GUARD_HISTORY_PAGES, GUARD_REFUSE, saveGuardAccountDecision } from "../friendsInVoice/personalGuardsAccount";
 import type { GuardAccountBridge, GuardAccountMessage } from "../friendsInVoice/personalGuardsAccountTypes";
 import { publicKeyString } from "../friendsInVoice/personalGuardsCrypto";
 import { newGuardNonce, serializeWire } from "../friendsInVoice/personalGuardsProtocol";
@@ -101,6 +101,21 @@ test("history pagination finds an older invitation without executing historical 
     const result = await findGuardAccountSource(bridge, ownerId, channelId);
     assert.equal(result?.invite.messageId, f.message.id);
     assert.deepEqual(cursors, [undefined, "800000000000000000"]);
+});
+
+test("history lookups stop after a bounded number of pages", async () => {
+    const f = await fixture();
+    let calls = 0;
+    const bridge = { ...f.bridge, fetchPage: async () => {
+        calls++;
+        const base = 900000000000000000n - BigInt(calls) * 1000n;
+        return Array.from({ length: 100 }, (_, index) => ({ ...f.message, id: (base - BigInt(index)).toString(), content: "ordinary message" }));
+    } };
+    assert.equal(await findGuardAccountSource(bridge, ownerId, channelId, Number.POSITIVE_INFINITY), null);
+    assert.equal(calls, GUARD_HISTORY_PAGES);
+    calls = 0;
+    assert.equal(await findGuardAccountSource(bridge, ownerId, channelId, 1), null);
+    assert.equal(calls, 1);
 });
 
 test("account switching or network errors do not create accepted access", async () => {
