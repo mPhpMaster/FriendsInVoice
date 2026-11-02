@@ -110,14 +110,34 @@ function Test-VencordSource($dir) {
     return (Get-Content $pkg -Raw) -match '"name"\s*:\s*"vencord"'
 }
 
+function Invoke-Pnpm([string[]]$pnpmArgs) {
+    try { pnpm @pnpmArgs; return -not $LASTEXITCODE } catch { return $false }
+}
+
+# Vencord's dependencies change when Vencord updates, so install them every time (quick when nothing changed).
+# A broken pnpm launcher (corepack's cache under AppData\Local\node\corepack missing files) can't stop it:
+# retry with an empty corepack cache, then with the exact pnpm version through npx.
+function Install-VencordDeps($dir) {
+    $first = -not (Test-Path (Join-Path $dir "node_modules"))
+    Info "Installing Vencord's dependencies$(if ($first) { ' (first time, takes a few minutes)' })..."
+    if (Invoke-Pnpm @("install", "--frozen-lockfile")) { return }
+
+    Warn "pnpm didn't work. Retrying with a fresh corepack cache..."
+    $oldHome = $env:COREPACK_HOME
+    $env:COREPACK_HOME = Join-Path ([IO.Path]::GetTempPath()) "friends-in-voice-corepack"
+    try { if (Invoke-Pnpm @("install", "--frozen-lockfile")) { return } } finally { $env:COREPACK_HOME = $oldHome }
+
+    $pm = (Get-Content (Join-Path $dir "package.json") -Raw | ConvertFrom-Json).packageManager
+    $version = if ($pm -match '^pnpm@([0-9][^+]*)') { $Matches[1] } else { "latest" }
+    Warn "Still failing. Trying pnpm $version through npx..."
+    try { npx --yes "pnpm@$version" install --frozen-lockfile } catch { }
+    if ($LASTEXITCODE) { throw "Installing Vencord's dependencies failed (see the messages above)." }
+}
+
 function Build-Vencord($dir) {
     Push-Location $dir
     try {
-        if (-not (Test-Path (Join-Path $dir "node_modules"))) {
-            Info "Installing Vencord's dependencies (first time only, takes a few minutes)..."
-            pnpm install --frozen-lockfile
-            if ($LASTEXITCODE) { throw "pnpm install failed." }
-        }
+        Install-VencordDeps $dir
         Info "Building Vencord..."
         # run Vencord's plain "node ..." build script with node directly: a broken pnpm/corepack launcher
         # (MODULE_NOT_FOUND under AppData\Local\node\corepack) can't stop the build then

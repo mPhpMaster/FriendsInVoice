@@ -10,7 +10,8 @@ const repo = dirname(dirname(fileURLToPath(import.meta.url)));
 const unix = process.platform === "darwin" || process.platform === "linux";
 
 for (const os of ["Darwin", "Linux"]) {
-    for (const failed of [false, true]) test(`${os} installer ${failed ? "restores previous source after build failure" : "replaces old source without stale modules"}`, { skip: !unix }, async () => {
+    for (const mode of ["ok", "failed", "brokenCorepack"]) test(`${os} installer ${{ ok: "replaces old source without stale modules", failed: "restores previous source after build failure", brokenCorepack: "installs dependencies with a fresh corepack cache when pnpm is broken" }[mode]}`, { skip: !unix }, async () => {
+        const failed = mode === "failed";
         const root = await mkdtemp(join(tmpdir(), "fiv-installer-"));
         try {
             const bundle = join(root, "Friends In Voice"), home = join(root, "home"), mock = join(root, "bin");
@@ -23,7 +24,7 @@ for (const os of ["Darwin", "Linux"]) {
             await writeFile(join(vencord, "package.json"), '{"name":"vencord"}');
             await writeFile(join(vencord, "dist", "patcher.js"), "");
             await writeFile(join(resources, "app.asar"), `require(${JSON.stringify(join(vencord, "dist", "patcher.js"))});`);
-            const scripts = { uname: `printf '%s\\n' '${os}'`, pnpm: `exit ${failed ? 1 : 0}`,
+            const scripts = { uname: `printf '%s\\n' '${os}'`, pnpm: mode === "brokenCorepack" ? '[ "$1" = install ] && [ -z "$COREPACK_HOME" ] && exit 1; exit 0' : `[ "$1" = install ] && exit 0; exit ${failed ? 1 : 0}`, npx: "exit 1",
                 osascript: "exit 0", open: "exit 0", pkill: "exit 0", pgrep: "exit 1", sleep: "exit 0", nohup: "exit 0" };
             for (const [name, body] of Object.entries(scripts)) {
                 const path = join(mock, name);
@@ -37,6 +38,7 @@ for (const os of ["Darwin", "Linux"]) {
             assert.equal(await readFile(join(installed, "obsolete.ts"), "utf8"), "export const old = true;\n");
             const update = spawnSync("/bin/bash", [join(bundle, "install.sh"), "--vencord-dir", vencord], { env, encoding: "utf8", timeout: 20_000 });
             assert.equal(update.status === 0, !failed, update.stdout + update.stderr);
+            if (mode === "brokenCorepack") assert.match(update.stdout, /fresh corepack cache/);
             assert.deepEqual(await readdir(installed), [failed ? "obsolete.ts" : "index.tsx"]);
             const work = (await readdir(vencord)).find(name => name.startsWith(".friends-in-voice-install."));
             assert.ok(work);
