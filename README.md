@@ -158,11 +158,11 @@ Run these from a terminal opened in the unzipped folder (`install.bat` passes th
 
 ### Update
 
-On Windows and macOS with v1.9.0 or newer, click the update notification. For the first update from an older version, or on Linux, download the new release, unzip it, and run `install.bat` again (Mac/Linux: `install.command` or `install.sh`). It will say FriendsInVoice is already installed and ask whether to uninstall it. Answer **N**, then **Y** to update.
+On Windows and macOS with v1.9.0 or newer, click the update notification. For the first update from an older version, or on Linux, download the new release, unzip it, and run `install.bat` again (Mac/Linux: `install.command` or `install.sh`). On Windows it says FriendsInVoice is already installed and offers **1** reinstall/update (the default: a fresh copy, rebuilt and re-linked to Discord, settings kept), **2** uninstall or **3** cancel; press Enter for 1. On Mac/Linux it asks whether to uninstall it: answer **N**, then **Y** to update.
 
 ### Uninstall
 
-Run `install.bat` (Mac/Linux: `install.command` or `install.sh`) and answer **Y** when it asks whether to uninstall FriendsInVoice. This removes only the plugin; Vencord stays installed. To remove Vencord too, see the [Vencord docs](https://docs.vencord.dev/installing/).
+Run `install.bat` and choose **2** (Mac/Linux: run `install.command` or `install.sh` and answer **Y** when it asks whether to uninstall FriendsInVoice). This removes only the plugin; Vencord stays installed. To remove Vencord too, see the [Vencord docs](https://docs.vencord.dev/installing/).
 
 ### Manual install (advanced)
 
