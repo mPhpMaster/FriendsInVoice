@@ -27,3 +27,19 @@ export function directBuildArgs(script: unknown): string[] | null {
     const args = parts.slice(1);
     return args.every(arg => /^[\w.\/=:@+-]+$/.test(arg)) ? args : null;
 }
+
+// Other userplugins named in a failed build's output ("src/userplugins/<name>/file.tsx:11:9: ERROR …").
+// Kept in sync with repair.mjs, which can't import TypeScript.
+export function brokenPlugins(output: string, own = "friendsInVoice"): string[] {
+    const names = new Set<string>();
+    for (const match of output.matchAll(/src[\\/]+userplugins[\\/]+([^\\/\s:"'`]+)[\\/]/g)) {
+        if (match[1] !== own && !match[1].startsWith(".")) names.add(match[1]);
+    }
+    return [...names];
+}
+
+// "pnpm@12.15.0+sha512.…" -> "12.15.0"
+export function pnpmVersion(packageManager: unknown): string {
+    const match = /^pnpm@(\d[^+\s]*)/.exec(String(packageManager ?? ""));
+    return match ? match[1] : "latest";
+}

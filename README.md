@@ -160,6 +160,17 @@ Run these from a terminal opened in the unzipped folder (`install.bat` passes th
 
 On Windows and macOS with v1.9.0 or newer, click the update notification. For the first update from an older version, or on Linux, download the new release, unzip it, and run `install.bat` again (Mac/Linux: `install.command` or `install.sh`). It says FriendsInVoice is already installed and offers **1** reinstall/update (the default: a fresh copy, rebuilt and re-linked to Discord, settings kept), **2** uninstall or **3** cancel; press Enter for 1.
 
+### Repair
+
+If an update or the installer fails (for example "Vencord build failed", "Cannot find module ...corepack...", or a missing `node_modules` package), download the latest release, unzip it, and run `repair.bat` (macOS: `repair.command`, Linux: `bash repair.sh`). It:
+
+- repairs pnpm if it doesn't start (installs the pnpm version Vencord asks for, or uses it through npx),
+- puts a fresh copy of FriendsInVoice into Vencord and installs Vencord's dependencies,
+- builds Vencord, and if another Vencord plugin stops the build, names it and asks before moving it to `userplugins-disabled` (move it back after updating it),
+- makes sure Discord loads that Vencord folder, then offers to restart Discord.
+
+It needs Node.js (the installer sets it up). Options: `--vencord-dir <folder>`, `--branch ptb|canary`, `--yes`. The in-Discord updater also installs Vencord's dependencies and retries once when a build fails.
+
 ### Uninstall
 
 Run `install.bat` (Mac/Linux: `install.command` or `install.sh`) and choose **2**. This removes only the plugin; Vencord stays installed. To remove Vencord too, see the [Vencord docs](https://docs.vencord.dev/installing/).
