@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.18.0
+ * @version 1.18.1
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -2171,6 +2171,7 @@ function settingsPanel(view) {
 // src/style.js
 var STYLE = `
 .fivbd-launch{position:fixed;bottom:82px;left:76px;z-index:9000;padding:8px 11px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--background-floating);color:var(--text-normal);cursor:pointer;box-shadow:0 4px 16px #0005}
+body.fivbd-open iframe[src*="discordsays.com"],body.fivbd-open [class*="pictureInPicture"]:has(iframe){visibility:hidden!important}
 .fivbd-shade{position:fixed;inset:0;z-index:10000;background:#0009;display:flex;align-items:center;justify-content:center;padding:18px}
 .fivbd-panel{width:min(920px,100%);max-height:90vh;display:flex;flex-direction:column;background:var(--background-primary);color:var(--text-normal);border:1px solid var(--border-subtle);border-radius:14px;box-shadow:0 18px 55px #0008;overflow:hidden}
 .fivbd-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-subtle)}
@@ -2946,12 +2947,14 @@ var Dashboard = class {
         if (event.target === this.shade) this.close();
       });
       document.body.append(this.shade);
+      document.body.classList.add("fivbd-open");
     }
     this.render();
   }
   close() {
     this.shade?.remove();
     this.shade = null;
+    document.body.classList.remove("fivbd-open");
   }
   refresh() {
     if (!this.shade || ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;

@@ -43,10 +43,12 @@ export class Dashboard {
             this.shade = element("div", "fivbd-shade");
             this.shade.addEventListener("click", event => { if (event.target === this.shade) this.close(); });
             document.body.append(this.shade);
+            // a running Activity would cover the panel: hide it while the panel is open
+            document.body.classList.add("fivbd-open");
         }
         this.render();
     }
-    close() { this.shade?.remove(); this.shade = null; }
+    close() { this.shade?.remove(); this.shade = null; document.body.classList.remove("fivbd-open"); }
     refresh() {
         if (!this.shade || ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
         this.render();
