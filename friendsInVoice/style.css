@@ -67,11 +67,18 @@
 
 /* ---------- page ---------- */
 
+/* while the page is open, hide a running Activity (Word Bomb, …) so it can't cover it; it keeps running and comes back on close */
+body.vc-fiv-page-open iframe[src*="discordsays.com"],
+body.vc-fiv-page-open [class*="pictureInPicture"]:has(iframe) {
+    visibility: hidden !important;
+}
+
 .vc-fiv-page {
     position: fixed;
     right: 0;
     bottom: 0;
-    z-index: 100;
+    /* above Discord's Activity / picture-in-picture layer, below its popouts and modals (1002) */
+    z-index: 1000;
     display: flex;
     flex-direction: column;
     background: var(--background-base-lower, var(--background-primary, #313338));
