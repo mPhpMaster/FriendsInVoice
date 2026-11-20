@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.20.1
+ * @version 1.20.2
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -102,27 +102,36 @@ var AlertService = class {
 
 // src/autoStatus.js
 var AUTO_STATUS_DELAY = 1e4;
-var AUTO_STATUS_PER_MINUTE = 3;
+var LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 var AutoStatus = class {
-  constructor(api, bridge, data, timers = { set: setTimeout, clear: clearTimeout, now: Date.now }) {
+  constructor(api, bridge, data, timers = { set: setTimeout, clear: clearTimeout }) {
     this.api = api;
     this.bridge = bridge;
     this.data = data;
     this.timers = timers;
     this.pending = null;
-    this.writes = [];
+    this.lastOffer = "";
   }
-  /** only writes when the status actually changes, and at most 3 times a minute */
+  /** shows the suggestion for being in or out of a call, once, and only when your status differs */
   apply(inCall = !!this.bridge.myVoiceChannel()) {
     const { autoStatus, statusInCall, statusOutsideCall } = this.data.value;
     if (!autoStatus || !this.bridge.currentId()) return;
-    const now = this.timers.now();
-    this.writes = this.writes.filter((time) => now - time < 6e4);
-    if (this.writes.length >= AUTO_STATUS_PER_MINUTE) return this.schedule(6e4 - (now - this.writes[0]) + 1e3);
     const wanted = inCall ? statusInCall : statusOutsideCall;
-    if (this.bridge.currentStatus?.() === wanted) return;
-    this.writes.push(now);
-    void this.bridge.setStatus(wanted).catch((error) => this.api.Logger.error("Auto switch status failed", error));
+    if (this.bridge.currentStatus?.() === wanted) {
+      this.lastOffer = "";
+      return;
+    }
+    if (this.lastOffer === wanted) return;
+    this.lastOffer = wanted;
+    const label = LABELS[wanted] ?? wanted;
+    this.api.UI.showNotice(`Change your status to ${label}? ${inCall ? "You're in a call." : "You're not in a call anymore."}`, {
+      timeout: 3e4,
+      buttons: [{ label: `Set ${label}`, onClick: () => this.accept(wanted) }]
+    });
+  }
+  accept(status) {
+    if (this.bridge.currentStatus?.() === status) return;
+    void this.bridge.setStatus(status).catch((error) => this.api.Logger.error("Changing the status failed", error));
   }
   schedule(delay) {
     this.cancel();
@@ -135,11 +144,14 @@ var AutoStatus = class {
     if (this.pending) this.timers.clear(this.pending);
     this.pending = null;
   }
-  /** quick channel hopping ends in one status change, for wherever you are 10 seconds after the last hop */
+  /** quick channel hopping ends in one suggestion, for wherever you are 10 seconds after the last hop */
   onUpdates(voiceStates) {
     if (!this.data.value.autoStatus || !Array.isArray(voiceStates)) return;
     const me = this.bridge.currentId();
-    if (voiceStates.some((state) => state?.userId === me)) this.schedule(AUTO_STATUS_DELAY);
+    if (voiceStates.some((state) => state?.userId === me)) {
+      this.lastOffer = "";
+      this.schedule(AUTO_STATUS_DELAY);
+    }
   }
 };
 
@@ -222,7 +234,7 @@ var DEFAULTS = {
   showWhatsNew: true,
   autoStatus: false,
   autoAllowGuardCommands: false,
-  hideButton: false,
+  alwaysHideButton: true,
   statusInCall: "online",
   statusOutsideCall: "invisible",
   personalGuards: [],
@@ -239,7 +251,7 @@ function normalizeData(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const data = { ...DEFAULTS };
   for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands", "hideButton"])
+  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands", "alwaysHideButton"])
     if (typeof source[key] === "boolean") data[key] = source[key];
   for (const key of ["anthropicApiKey", "aiModel"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
@@ -2209,8 +2221,8 @@ var SWITCHES = [
   ["smartRepliesAi", "Enable the optional Claude reply button"],
   ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
   ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
-  ["autoStatus", "Auto switch status: change your status when you join or leave a call"],
-  ["hideButton", "Hide the Friends In Voice button (Shift + F12 shows or hides it)"],
+  ["autoStatus", "Status suggestions: when you join or leave a call, ask if you want to change your status (nothing changes until you click)"],
+  ["alwaysHideButton", "Keep the Friends In Voice button hidden (Shift + F12 opens the dashboard and shows the button for 5 seconds)"],
   ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
 ];
 var STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
@@ -2230,15 +2242,15 @@ function settingsPanel(view) {
     input.addEventListener("change", () => {
       view.data.set(key, input.checked);
       if (key === "autoStatus") view.autoStatus?.apply();
-      if (key === "hideButton" && view.launcher) view.launcher.hidden = input.checked;
+      if (key === "alwaysHideButton") view.syncLauncher?.();
       view.render();
     });
     add(label, input, element("span", "", title));
     root.append(label);
   }
   for (const [key, title] of [
-    ["statusInCall", "Auto switch status: your status while you're in a voice channel or call"],
-    ["statusOutsideCall", "Auto switch status: your status when you're not in a call"]
+    ["statusInCall", "Status suggestions: the status to suggest in a call"],
+    ["statusOutsideCall", "Status suggestions: the status to suggest outside calls"]
   ]) {
     const label = element("label");
     label.style.alignItems = "flex-start";
@@ -3081,6 +3093,7 @@ var TABS = [
   ["replies", "Smart replies"],
   ["log", "Log"]
 ];
+var PEEK_MS = 5e3;
 var Dashboard = class {
   constructor(api, bridge, data, version) {
     this.api = api;
@@ -3094,29 +3107,38 @@ var Dashboard = class {
       if (event.key === "F12" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) {
         event.preventDefault();
         event.stopPropagation();
-        this.toggleLauncher();
+        if (this.shade) this.close();
+        else this.open();
+        this.peek();
       }
     };
   }
   start() {
     this.api.DOM.addStyle(STYLE);
     this.launcher = button("\u{1F50A} Friends In Voice", () => this.open(), "fivbd-launch");
-    this.launcher.hidden = !!this.data.value.hideButton;
+    this.peekTimer = null;
+    this.syncLauncher();
     document.body.append(this.launcher);
     document.addEventListener("keydown", this.onKey, true);
   }
   stop() {
     this.close();
+    clearTimeout(this.peekTimer);
     this.launcher?.remove();
     document.removeEventListener("keydown", this.onKey, true);
     this.api.DOM.removeStyle();
   }
-  toggleLauncher() {
-    const hide = !this.data.value.hideButton;
-    this.data.set("hideButton", hide);
-    if (this.launcher) this.launcher.hidden = hide;
-    if (hide) this.close();
-    this.api.UI.showToast(hide ? "Friends In Voice button hidden. Press Shift + F12 to show it." : "Friends In Voice button shown.", { type: "info" });
+  /** hidden unless "Always hide the button" is off, or for 5 seconds after Shift + F12 */
+  syncLauncher(peeking = false) {
+    if (this.launcher) this.launcher.hidden = !!this.data.value.alwaysHideButton && !peeking;
+  }
+  peek() {
+    clearTimeout(this.peekTimer);
+    this.syncLauncher(true);
+    this.peekTimer = setTimeout(() => {
+      this.peekTimer = null;
+      this.syncLauncher();
+    }, PEEK_MS);
   }
   error(error) {
     this.api.UI.showToast(error instanceof Error ? error.message : String(error), { type: "error" });
