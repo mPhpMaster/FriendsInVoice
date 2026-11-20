@@ -25,7 +25,7 @@ export function directBuildArgs(script: unknown): string[] | null {
     const parts = script.trim().split(/\s+/);
     if (parts[0] !== "node" || parts.length < 2) return null;
     const args = parts.slice(1);
-    return args.every(arg => /^[\w.\/=:@+-]+$/.test(arg)) ? args : null;
+    return args.every(arg => /^[\w./=:@+-]+$/.test(arg)) ? args : null;
 }
 
 // Other userplugins named in a failed build's output ("src/userplugins/<name>/file.tsx:11:9: ERROR …").

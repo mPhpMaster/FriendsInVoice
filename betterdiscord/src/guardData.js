@@ -5,8 +5,9 @@ export function normalizeGuardGrant(item, actions) {
     return {
         userId: item.userId, actions: actions.filter(action => item.actions.includes(action)),
         ...(isNonce(item.inviteNonce) ? { inviteNonce: item.inviteNonce } : {}),
-        ...(isUserId(item.inviteMessageId) ? { inviteMessageId: item.inviteMessageId } : {}),
-        ...(isUserId(item.inviteChannelId) ? { inviteChannelId: item.inviteChannelId } : {})
+        ...(typeof item.pairId === "string" && /^[a-f\d]{24}$/.test(item.pairId) ? { pairId: item.pairId } : {}),
+        ...(typeof item.code === "string" && /^[A-HJ-NP-Z2-9]{8}$/.test(item.code) && Number.isSafeInteger(item.codeExpiresAt)
+            ? { code: item.code, codeExpiresAt: item.codeExpiresAt } : {})
     };
 }
 

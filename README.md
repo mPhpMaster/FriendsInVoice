@@ -58,19 +58,22 @@ Discord doesn't say who ended a friendship, and it never tells you when someone 
 
 ### 🛡️ Personal Guards
 
-Let a friend you trust mute, deafen, or disconnect **your** account while you're both in the same voice channel. No moderator permission is needed, and nothing is sent without you pressing Enter.
+Let a friend you trust mute, deafen, or disconnect **your** account while you're both in the same voice channel. No moderator permission is needed.
 
-1. **You:** right-click them → **Make Personal Guard…**, tick what they may do (**Mute microphone**, **Deafen**, **Disconnect from voice**) and click **Prepare invite**. Your DM with them opens with the invite ready; press **Enter**.
-2. **They:** choose **Accept** or **Refuse** on the invitation card in Vencord. In BetterDiscord, use the invitation notice or **Personal Guards → Invitations**. Invitations can also be accepted after being offline.
-3. **Using it:** while you share a voice channel, they right-click you → **🛡️ Mute <you>** (or Deafen / Disconnect) and press **Enter** on the prepared message. It's sent with `@silent`, so you don't get a ping. You get a notice with **Undo** and a temporary **Block**; if a command is refused, you see why.
+1. **You:** right-click them → **Make Personal Guard…**, tick what they may do (**Mute microphone**, **Deafen**, **Disconnect from voice**) and click **Get invite code**. Give them the 8-character code (it works once, only for their account, for 10 minutes). **Put it in their DM** fills it into your DM box; you press Enter yourself.
+2. **They:** open Friends in Voice → **Personal Guards** → **Enter an invite code** (or click **Use this code** under your DM), see what you allow, and choose **Accept** or **Refuse**.
+3. **Using it:** while you share a voice channel, they right-click you → **🛡️ Mute <you>** (or Deafen / Disconnect). It applies on your Discord within about a second. You get a notice with **Undo** and a temporary **Block**; if a command is refused, you see why.
 
-Change or remove access any time from the same menu (**Personal Guard settings…**). An updated invite replaces the old one and requires a new acceptance. Removing someone takes effect on your side immediately.
+Change or remove access any time from the same menu (**Personal Guard settings…**). Changes apply right away; removing someone stops their access immediately.
 
-In the chat, each Personal Guards message is a single short line (a link whose hidden part carries the data; clicking it opens this project's page). The invite shows the allowed actions and your public key. Commands are encrypted with ECDH and AES-GCM, and your private key stays in local, non-extractable browser storage. Before acting, your client checks the Discord sender, the current invite, freshness, replays and that you share a voice channel. A guardian's Accept or Decline is saved through their own reaction on the original invite. Other devices signed into that same Discord account, with this plugin installed, restore the decision from the DM without transferring private keys. For an invitation accepted before this update, click Accept once on the original invitation. Moving the owner's private key to another installation still requires a new invitation.
+**How it works, and why it's safe for your account.** Pairing and commands go through the Friends in Voice server (`https://friendsinvoice.sarhsoft.com`, changeable in the plugin settings), never through Discord messages. The plugin no longer reads DMs, sends guard messages or adds reactions, and it makes no Discord requests in the background. The only thing Discord sees is the result: you getting muted, deafened or disconnected, the same as clicking the button yourself. Requests to the server run outside Discord's page.
 
-Under **Access others gave you**, click **Remove access** to decline the invitation for your guardian account and remove its Guard Actions menu. Other plugin devices restore that decision from the DM. This does not change the owner's own guardian list.
+- No Discord token or password is ever sent anywhere. The server stores each install's public key, Discord user ID, who is paired with whom, open codes for 10 minutes and commands for at most 60 seconds.
+- Commands are encrypted end to end with ECDH and AES-GCM. Your private key stays in local, non-extractable browser storage, so even the server can't read or forge a command. Before acting, your client checks the guardian's pinned key, the current pairing, the allowed action, freshness, replays and that you share a voice channel.
+- Your client only listens to the server while you're in voice and have a guard, or while an invite code is open. Otherwise it sends nothing.
+- Invites from versions before 1.19 were DM messages and no longer work: pair again with a code once.
 
-Send each guard invitation or command as a separate DM. Preparing a message opens the conversation and reveals the draft. If that DM already has an unsent draft, the plugin keeps it and asks you to send or clear it before preparing another guard message. Rapid action clicks cannot combine messages. Encoded fields tolerate spaces, tabs, and line breaks introduced during message composition or delivery; the decoded key, wire format, and encrypted authentication are still validated.
+The server is in [`server/`](server) (Node.js, no dependencies) if you want to run your own.
 
 ### 💬 Smart replies in DMs
 

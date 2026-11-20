@@ -39,6 +39,8 @@ export class Dashboard {
     }
     open(tab = this.tab) {
         this.tab = TABS.some(item => item[0] === tab) ? tab : "voice";
+        // one read from the Friends in Voice server when Personal Guards opens; nothing is read from Discord
+        if (this.tab === "guards") void this.guards?.refresh(true);
         if (!this.shade) {
             this.shade = element("div", "fivbd-shade");
             this.shade.addEventListener("click", event => { if (event.target === this.shade) this.close(); });

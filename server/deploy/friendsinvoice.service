@@ -1,0 +1,20 @@
+[Unit]
+Description=FriendsInVoice Personal Guards server
+After=network.target
+
+[Service]
+Type=simple
+User=sarhsoft
+Group=sarhsoft
+WorkingDirectory=/home/sarhsoft/apps/friendsinvoice
+Environment=PORT=3077
+Environment=HOST=127.0.0.1
+Environment=DATA_FILE=/home/sarhsoft/apps/friendsinvoice/data/guards.json
+ExecStart=/opt/node22/bin/node start.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

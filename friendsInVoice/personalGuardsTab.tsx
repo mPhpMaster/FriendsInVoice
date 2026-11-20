@@ -5,11 +5,14 @@
  */
 
 import { classNameFactory } from "@utils/css";
-import { openUserProfileModal, React, UserStore, useState } from "@webpack/common";
+import { openUserProfileModal, React, useEffect, UserStore, useState } from "@webpack/common";
 
+import { formatCode } from "./guardServer";
+import { GuardCodeEntry, openGuardCodeModal } from "./personalGuardsCodes";
 import { ownerSetupMessage, ownerSetupStep } from "./personalGuardsOnboarding";
 import { GUARD_ACTIONS, GUARD_LABELS } from "./personalGuardsProtocol";
-import { acceptGuardInvite, declineGuardInvite, getGrant, guardDisplayName, type GuardsStore, hasGuardKey, removeGuardAccountAccess, revokeGuard, sendGuardCommand, sendGuardInvite, setGrant, sharesVoice } from "./personalGuardsRuntime";
+import { createGuardCode, getGrant, guardDisplayName, type GuardsStore, hasGuardKey, removeGuardAccountAccess, revokeGuard, sendGuardCommand, setGrant, sharesVoice } from "./personalGuardsRuntime";
+import { onGuardPairsChange, refreshGuardPairs } from "./personalGuardsServer";
 import type { GuardAction } from "./personalGuardsTypes";
 
 const cl = classNameFactory("vc-fiv-");
@@ -34,9 +37,16 @@ function matchesGuard(userId: string, search: string): boolean {
         .some(value => value.toLowerCase().includes(search));
 }
 
+export async function inviteGuardian(store: GuardsStore, userId: string) {
+    const result = await createGuardCode(store, userId);
+    if (result) openGuardCodeModal(userId, result.code, result.expiresAt);
+}
+
 function GuardianRow({ userId, store, refresh }: { userId: string; store: GuardsStore; refresh(): void; }) {
+    const grant = store.personalGuards.find(item => item.userId === userId);
     const actions = getGrant(store, userId);
-    const step = ownerSetupStep(actions);
+    const open = grant?.code && (grant.codeExpiresAt ?? 0) > Date.now();
+    const step = ownerSetupStep(actions, !!grant?.pairId, !!open);
 
     function update(next: GuardAction[]) {
         setGrant(store, userId, next);
@@ -46,6 +56,7 @@ function GuardianRow({ userId, store, refresh }: { userId: string; store: Guards
     return <section className={cl("guard-card")}>
         <GuardIdentity userId={userId} />
         <p className={cl("guard-step")}>{ownerSetupMessage(step)}</p>
+        {open && <p className={cl("guard-step")}>Open code: <strong>{formatCode(grant!.code!)}</strong></p>}
         <div className={cl("guard-options")}>
             {GUARD_ACTIONS.map(action => <label key={action}>
                 <input type="checkbox" checked={actions.includes(action)}
@@ -56,7 +67,9 @@ function GuardianRow({ userId, store, refresh }: { userId: string; store: Guards
                 onChange={() => update(actions.length === GUARD_ACTIONS.length ? [] : GUARD_ACTIONS)} />Select all</label>
         </div>
         <div className={cl("guard-controls")}>
-            <button onClick={() => void sendGuardInvite(store, userId)} disabled={!actions.length}>Invite guardian</button>
+            {!grant?.pairId && <button onClick={() => void inviteGuardian(store, userId).then(refresh)} disabled={!actions.length}>
+                {open ? "New invite code" : "Get invite code"}
+            </button>}
             <button className={cl("guard-danger")} onClick={() => {
                 revokeGuard(store, userId);
                 refresh();
@@ -69,17 +82,20 @@ function AccessRow({ ownerId, store, refresh }: { ownerId: string; store: Guards
     const grant = store.knownGuardGrants.find(item => item.userId === ownerId);
     if (!grant) return null;
     const together = sharesVoice(ownerId);
+    const usable = !!grant.pairId && hasGuardKey(store, ownerId);
     return <section className={cl("guard-card")}>
         <GuardIdentity userId={ownerId} />
-        <p className={cl("guard-step")}>Access granted. In the same voice channel, right-click them (or use these buttons) and press Enter on the prepared message.</p>
+        <p className={cl("guard-step")}>{usable
+            ? "Access granted. In the same voice channel, right-click them or use these buttons. It applies right away."
+            : "This access came from an old DM invite and no longer works. Ask them for an invite code."}</p>
+        {usable && <div className={cl("guard-controls")}>
+            {grant.actions.map(action => <button key={action} disabled={!together}
+                onClick={() => void sendGuardCommand(store, ownerId, action)}>{GUARD_LABELS[action]}</button>)}
+        </div>}
+        {usable && !together && <small>Join the same voice channel to use guard actions.</small>}
         <div className={cl("guard-controls")}>
-            {grant.actions.map(action => <button key={action} disabled={!together || !hasGuardKey(store, ownerId)}
-                onClick={() => void sendGuardCommand(store, ownerId, action)}>Send {GUARD_LABELS[action]}</button>)}
-        </div>
-        {!together && <small>Join the same voice channel to use guard actions.</small>}
-        <div className={cl("guard-controls")}>
-            <button className={cl("guard-danger")} title="Remove this saved access from your device" onClick={() => {
-                void removeGuardAccountAccess(ownerId);
+            <button className={cl("guard-danger")} title="Stop being their guard" onClick={() => {
+                void removeGuardAccountAccess(store, ownerId).then(refresh);
                 refresh();
             }}>Remove access</button>
         </div>
@@ -91,14 +107,23 @@ export function PersonalGuardsTab({ store, refresh }: { store: GuardsStore; refr
     const query = search.trim().toLowerCase();
     const guardians = store.personalGuards.filter(item => matchesGuard(item.userId, query));
     const owners = store.knownGuardGrants.filter(item => matchesGuard(item.userId, query));
-    const pending = store.pendingGuardInvites.filter(item => matchesGuard(item.userId, query));
+
+    // one read from the Friends in Voice server when the tab opens; nothing is read from Discord
+    useEffect(() => {
+        void refreshGuardPairs(true);
+        return onGuardPairsChange(refresh);
+    }, []);
 
     return <div className={cl("guards-tab")}>
         <div className={cl("guards-intro")}>
             <h2>Personal Guards</h2>
             <p>Choose who can mute, deafen, or disconnect your own account while you share voice.</p>
-            <small>Right-click a friend → Make Personal Guard…, choose what they may do, and press Enter on the prepared invite. They accept it from that DM message, even if they were offline. While you share voice they right-click you to use it. Commands stay encrypted and your private key stays on this device.</small>
+            <small>Right-click a friend → Make Personal Guard…, choose what they may do, and give them the invite code. They enter it here.
+                Pairing and commands go through the Friends in Voice server, end-to-end encrypted, and never through Discord messages.
+                Your private key stays on this device.</small>
         </div>
+        <h3>Enter an invite code</h3>
+        <GuardCodeEntry />
         <input className={cl("search", "guard-search")} type="search" value={search} onChange={event => setSearch(event.currentTarget.value)}
             placeholder="Search guardians and access" aria-label="Search guardians and access" />
         <h3>People who guard me</h3>
@@ -106,20 +131,10 @@ export function PersonalGuardsTab({ store, refresh }: { store: GuardsStore; refr
             {guardians.map(grant => <GuardianRow key={grant.userId} userId={grant.userId} store={store} refresh={refresh} />)}
         </div>
         {!store.personalGuards.length && <p className={cl("guard-empty")}>No guardians yet. Right-click a friend in Discord and choose Make Personal Guard…</p>}
-        {pending.length > 0 && <><h3>Invitations to guard others</h3><div className={cl("guards-grid")}>
-            {pending.map(invite => <section className={cl("guard-card")} key={invite.userId}>
-                <GuardIdentity userId={invite.userId} />
-                <p className={cl("guard-step")}>Allowed: {invite.actions.map(action => GUARD_LABELS[action]).join(", ")}</p>
-                <div className={cl("guard-controls")}>
-                    <button onClick={() => { acceptGuardInvite(store, invite.userId); refresh(); }}>Accept invitation</button>
-                    <button onClick={() => void declineGuardInvite(store, invite.userId, invite.nonce, invite)}>Refuse</button>
-                </div>
-            </section>)}
-        </div></>}
         <h3>Access others gave you</h3>
         <div className={cl("guards-grid")}>
             {owners.map(grant => <AccessRow key={grant.userId} ownerId={grant.userId} store={store} refresh={refresh} />)}
         </div>
-        {!store.knownGuardGrants.length && <p className={cl("guard-empty")}>No access yet. When someone invites you, accept it from their message in your DM.</p>}
+        {!store.knownGuardGrants.length && <p className={cl("guard-empty")}>No access yet. When someone gives you an invite code, enter it above.</p>}
     </div>;
 }

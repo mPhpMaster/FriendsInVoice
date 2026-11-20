@@ -11,6 +11,25 @@ export { getUpdateStatus, installUpdate } from "./updateInstaller";
 // Discord's content security policy blocks api.anthropic.com from the page, so the request runs here.
 // Raw HTTP instead of the Anthropic SDK: Vencord user plugins can't add npm dependencies.
 
+// Personal Guards server requests run here too: Discord's page can't reach other sites, and this way Discord
+// never sees them. Only https addresses (or localhost while testing) are allowed.
+export async function guardRequest(_: IpcMainInvokeEvent, method: string, url: string, token: string | undefined, body: unknown, timeoutMs: number) {
+    if (!["GET", "POST", "PATCH", "DELETE"].includes(method) ||
+        !(/^https:\/\/[^/\s]+\/(v1\/|health)/i.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url)))
+        return { status: 0, body: { error: "Blocked request." } };
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: AbortSignal.timeout(Math.min(Math.max(timeoutMs, 1000), 60_000)),
+        });
+        return { status: res.status, body: await res.json().catch(() => null) };
+    } catch (e: any) {
+        return { status: 0, body: { error: String(e?.message ?? e) } };
+    }
+}
+
 export interface ChatLine {
     mine: boolean;
     content: string;
