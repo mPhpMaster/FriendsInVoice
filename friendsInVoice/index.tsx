@@ -18,12 +18,13 @@ import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStor
 
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
 import { applyAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
+import { codeFromText } from "./guardServer";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
-import { onGuardAccountChannel, onGuardAccountReaction, startGuardAccountSync, stopGuardAccountSync, syncVoiceGuardAccess } from "./personalGuardsAccountSync";
-import { GuardInviteCard } from "./personalGuardsCard";
+import { GuardCodeCard } from "./personalGuardsCodes";
 import { GuardNotificationHost } from "./personalGuardsNotice";
 import { isGuardMessage } from "./personalGuardsProtocol";
-import { clearGuardRuntime, handleGuardMessage } from "./personalGuardsRuntime";
+import { clearGuardRuntime, installGuardCommandHandler } from "./personalGuardsRuntime";
+import { startGuardServer, stopGuardServer, updateGuardListening } from "./personalGuardsServer";
 import { PersonalGuardsTab } from "./personalGuardsTab";
 import { settings } from "./pluginSettings";
 import { SmartReplies } from "./smartReplies";
@@ -37,7 +38,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.18.6";
+const VERSION = "1.19.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -390,20 +391,18 @@ export default definePlugin({
         CONNECTION_OPEN() {
             startQuietPeriod();
             void loadAccount();
-            void startGuardAccountSync();
+            void startGuardServer();
             setTimeout(() => void showWhatsNew(VERSION), 3000);
             void applyAutoStatus();
         },
         LOGOUT() {
-            stopGuardAccountSync();
+            stopGuardServer();
             leaveAccount();
         },
-        CHANNEL_SELECT({ channelId }: { channelId?: string; }) { if (channelId) onGuardAccountChannel(channelId); },
-        MESSAGE_REACTION_ADD({ channelId, userId }: { channelId: string; userId: string; }) { onGuardAccountReaction(channelId, userId); },
-        MESSAGE_REACTION_REMOVE({ channelId, userId }: { channelId: string; userId: string; }) { onGuardAccountReaction(channelId, userId); },
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: { userId: string; channelId?: string | null; oldChannelId?: string | null; }[]; }) {
             onVoiceStateUpdates(voiceStates);
-            syncVoiceGuardAccess();
+            // decides only whether to listen for guard commands from the Friends in Voice server; nothing goes to Discord
+            updateGuardListening();
             onVoiceLogUpdates(voiceStates);
             onAutoStatusVoiceUpdates(voiceStates);
         },
@@ -422,9 +421,6 @@ export default definePlugin({
         GUILD_DELETE({ guild }: { guild: { id: string; unavailable?: boolean; }; }) {
             onGuildDelete(guild);
         },
-        MESSAGE_CREATE({ message }: { message: { id: string; channel_id: string; content: string; author: { id: string; bot?: boolean; }; }; }) {
-            handleGuardMessage(settings.store, message);
-        },
     },
 
     renderButton: ErrorBoundary.wrap(ServerListButton, { noop: true }),
@@ -437,7 +433,7 @@ export default definePlugin({
             // only messages people wrote (DEFAULT, REPLY), not system messages such as "accepted your friend request":
             // https://docs.discord.com/developers/resources/message#message-object-message-types
             if (message.type !== 0 && message.type !== 19) return null;
-            if (isGuardMessage(message.content ?? "")) return null;
+            if (isGuardMessage(message.content ?? "") || codeFromText(message.content ?? "")) return null;
 
             const channel = props.channel ?? ChannelStore.getChannel(message.channel_id);
             if (!channel?.isDM()) return null;
@@ -451,10 +447,11 @@ export default definePlugin({
 
         addMessageAccessory("FriendsInVoiceGuardInvite", props => {
             const { message } = props;
-            if (!message?.author || message.author.bot || !isGuardMessage(message.content ?? "")) return null;
+            const content = message?.content ?? "";
+            if (!message?.author || message.author.bot || (!isGuardMessage(content) && !codeFromText(content))) return null;
             const channel = props.channel ?? ChannelStore.getChannel(message.channel_id);
             if (!channel?.isDM()) return null;
-            return <ErrorBoundary noop><GuardInviteCard message={message} channel={channel} /></ErrorBoundary>;
+            return <ErrorBoundary noop><GuardCodeCard message={message} channel={channel} /></ErrorBoundary>;
         });
 
         loadedAway.stayInVoice = settings.store.stayInVoice;
@@ -464,7 +461,8 @@ export default definePlugin({
         seedVoiceChannels();
         seedVoiceLog();
         startAccountData();
-        void startGuardAccountSync();
+        installGuardCommandHandler(settings.store);
+        void startGuardServer();
         PresenceStore.addChangeListener(onPresenceChange);
 
         addServerListElement(ServerListRenderPosition.Above, this.renderButton);
@@ -477,7 +475,7 @@ export default definePlugin({
     },
 
     stop() {
-        stopGuardAccountSync();
+        stopGuardServer();
         stopAccountData();
         flushVoiceLog();
         clearGuardRuntime();

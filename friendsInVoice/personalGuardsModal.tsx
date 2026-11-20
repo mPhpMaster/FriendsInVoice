@@ -10,7 +10,8 @@ import { Modal, openModal, React, useState } from "@webpack/common";
 
 import { settings } from ".";
 import { GUARD_ACTIONS, GUARD_LABELS } from "./personalGuardsProtocol";
-import { guardDisplayName, revokeGuard, sendGuardInvite, setGrant } from "./personalGuardsRuntime";
+import { guardDisplayName, revokeGuard, setGrant } from "./personalGuardsRuntime";
+import { inviteGuardian } from "./personalGuardsTab";
 import type { GuardAction } from "./personalGuardsTypes";
 
 const cl = classNameFactory("vc-fiv-");
@@ -35,14 +36,19 @@ function GuardModal({ userId, modalProps }: { userId: string; modalProps: Render
                     onClick: () => { revokeGuard(settings.store, userId); modalProps.onClose(); },
                 }] : []),
                 { text: "Cancel", variant: "secondary", onClick: modalProps.onClose },
-                {
-                    text: existing?.inviteNonce ? "Prepare updated invite" : "Prepare invite",
+                existing?.pairId ? {
+                    text: "Save",
+                    variant: "primary",
+                    disabled: !actions.length,
+                    onClick: () => { setGrant(settings.store, userId, actions); modalProps.onClose(); },
+                } : {
+                    text: "Get invite code",
                     variant: "primary",
                     disabled: !actions.length,
                     onClick: () => {
                         setGrant(settings.store, userId, actions);
                         modalProps.onClose();
-                        void sendGuardInvite(settings.store, userId);
+                        void inviteGuardian(settings.store, userId);
                     },
                 },
             ]}
@@ -55,8 +61,10 @@ function GuardModal({ userId, modalProps }: { userId: string; modalProps: Render
                     </label>
                 ))}
                 <p className={cl("guard-modal-note")}>
-                    Your DM with {name} opens with the invite ready: press Enter to send it, and they accept it from that message.
-                    Each time they use it you get a notice with Undo, and you can block them for a while.
+                    {existing?.pairId
+                        ? `${name} is already your guard. Changes apply right away.`
+                        : `You get a one-time code to give ${name}. They enter it in Friends in Voice and accept.`}
+                    {" "}Each time they use it you get a notice with Undo, and you can block them for a while.
                 </p>
             </div>
         </Modal>

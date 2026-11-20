@@ -284,3 +284,6 @@
 .vc-fiv-whats-new-release li { margin: 3px 0; }
 .vc-fiv-whats-new-release code { padding: 0 4px; border-radius: 4px; background: var(--background-mod-strong, #0003); font-size: 13px; }
 .vc-fiv-whats-new-release + .vc-fiv-whats-new-release { padding-top: 14px; border-top: 1px solid var(--border-subtle, #4e505855); }
+.vc-fiv-guard-code { margin: 4px 0 8px; font: 700 28px/1.2 var(--font-code, monospace); letter-spacing: 4px; text-align: center; color: var(--header-primary, #f2f3f5); user-select: all; }
+.vc-fiv-guard-code-entry { display: flex; align-items: center; gap: 8px; max-width: 480px; margin-bottom: 12px; }
+.vc-fiv-guard-code-entry .vc-fiv-search { flex: 1 1 auto; margin: 0; text-transform: uppercase; }

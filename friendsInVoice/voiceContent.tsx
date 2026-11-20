@@ -259,10 +259,15 @@ export function Avatar({ user, size = 22 }: { user: User; size?: number; }) {
     return <img className={cl("avatar")} style={{ width: size, height: size }} src={user.getAvatarURL(undefined, 64)} alt="" />;
 }
 
+// people Discord hasn't loaded are fetched at most once per session, and only while their row is on screen
+const requestedUsers = new Set<string>();
+
 export function useUser(id: string) {
     const user = useStateFromStores([UserStore], () => UserStore.getUser(id));
     useEffect(() => {
-        if (!user) UserUtils.getUser(id).catch(() => { });
+        if (user || requestedUsers.has(id) || requestedUsers.size > 200) return;
+        requestedUsers.add(id);
+        UserUtils.getUser(id).catch(() => { });
     }, [id, user]);
     return user;
 }

@@ -77,6 +77,12 @@ export const settings = definePluginSettings({
         options: statusOptions("invisible"),
         onChange: () => void applyAutoStatus(),
     },
+    guardServer: {
+        type: OptionType.STRING,
+        description: "Personal Guards server (pairing codes and encrypted guard commands go here, never through Discord). Leave it as is unless you run your own",
+        default: "https://friendsinvoice.sarhsoft.com",
+        placeholder: "https://friendsinvoice.sarhsoft.com",
+    },
     watchlist: {
         type: OptionType.CUSTOM,
         default: [] as string[],

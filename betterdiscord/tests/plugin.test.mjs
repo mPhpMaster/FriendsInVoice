@@ -48,7 +48,7 @@ function mockApi() {
 
 test("bundle has BetterDiscord metadata, starts, patches menu, and fully stops", async () => {
     const text = await readFile(pluginFile, "utf8");
-    assert.match(text, /^\/\*\*[\s\S]*@name FriendsInVoice[\s\S]*@version 1\.18\.6/);
+    assert.match(text, /^\/\*\*[\s\S]*@name FriendsInVoice[\s\S]*@version 1\.19\.0/);
     const directory = await mkdtemp(join(tmpdir(), "friendsinvoice-bd-test-"));
     const target = join(directory, "FriendsInVoice.plugin.js");
     const dom = new JSDOM("<!doctype html><html><body></body></html>");
@@ -64,7 +64,9 @@ test("bundle has BetterDiscord metadata, starts, patches menu, and fully stops",
         const plugin = new Plugin({ version: "1.10.0" });
         plugin.start();
         assert.ok(document.querySelector(".fivbd-launch"));
-        assert.ok(calls.subscriptions.some(([event]) => event === "MESSAGE_CREATE"));
+        // Personal Guards no longer watch Discord messages, reactions or channel switches
+        for (const event of ["MESSAGE_CREATE", "MESSAGE_REACTION_ADD", "MESSAGE_REACTION_REMOVE", "CHANNEL_SELECT"])
+            assert.ok(!calls.subscriptions.some(([name]) => name === event), event);
         const tree = { props: { children: [] } };
         calls.menu(tree, { user: { id: guardianId } });
         const guards = tree.props.children.find(item => item.id === "fivbd-guards");

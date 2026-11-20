@@ -1,4 +1,3 @@
-import { GUARD_PASSIVE_PAGES } from "../../friendsInVoice/personalGuardsAccount.ts";
 import { GUARD_ACTIONS, GUARD_LABELS } from "../../friendsInVoice/personalGuardsProtocol.ts";
 
 function listItem(view, id, key, addText, removeText) {
@@ -17,7 +16,6 @@ export function installUserMenu(api, view) {
                 api.Utils?.findInTree?.(tree, item => !!item?.user?.id, { walkable: ["props", "children"] })?.user;
             const id = user?.id;
             if (!id || id === view.bridge.currentId()) return;
-            void view.guards.account.sync(id, GUARD_PASSIVE_PAGES);
             const known = view.guards.knownFor(id);
             const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter(action => known.includes(action)) : [];
             const guardItems = [
@@ -30,7 +28,7 @@ export function installUserMenu(api, view) {
                     }
                 },
                 ...(available.length ? [{ type: "submenu", id: "fivbd-guard-actions", label: "Guard Actions", items: available.map(action => ({
-                    id: `fivbd-guard-${action}`, label: `Prepare ${GUARD_LABELS[action]} DM`,
+                    id: `fivbd-guard-${action}`, label: GUARD_LABELS[action],
                     action: () => { view.close(); void view.guards.sendCommand(id, action); }
                 })) }] : [])
             ];

@@ -12,6 +12,11 @@ export interface GuardGrant {
     inviteNonce?: string;
     inviteMessageId?: string;
     inviteChannelId?: string;
+    /** the pairing on the Friends in Voice server, once the guardian accepted */
+    pairId?: string;
+    /** an open invite code (owner side) and when it expires */
+    code?: string;
+    codeExpiresAt?: number;
 }
 
 export interface GuardCommand {
