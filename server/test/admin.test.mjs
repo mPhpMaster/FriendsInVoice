@@ -2,17 +2,18 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { checkPassword, createAdmin, hashPassword } from "../admin.mjs";
-import { createApp, GuardStore } from "../server.mjs";
+import { createApp, createStats, GuardStore } from "../server.mjs";
 
 const OWNER = "123456789012345678", GUARD = "234567890123456789";
 const key = letter => `B${letter.repeat(86)}`;
 const NONCE = "12345678-1234-4234-8234-123456789abc";
 
-let server, base, store;
+let server, base, store, restarted = 0;
 before(async () => {
     store = new GuardStore(null);
-    const admin = createAdmin({ store, passwordHash: hashPassword("correct horse") });
-    server = createApp({ store, admin });
+    const stats = createStats();
+    const admin = createAdmin({ store, stats, passwordHash: hashPassword("correct horse"), restart: () => { restarted++; } });
+    server = createApp({ store, admin, stats });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -70,4 +71,57 @@ test("without a password hash the dashboard is off", async () => {
     const response = await fetch(`http://127.0.0.1:${off.address().port}/admin`);
     assert.equal(response.status, 503);
     off.close();
+});
+
+async function login(password = "correct horse") {
+    const response = await call("POST", "/admin/api/login", { body: { password } });
+    assert.equal(response.status, 200);
+    return response.headers.get("set-cookie").split(";")[0];
+}
+
+test("full control: edit, cancel, events, log, maintenance, backup, password, wipe and restart", async () => {
+    const cookie = await login();
+    const owner = store.register(OWNER, key("p")), guard = store.register(GUARD, key("q"));
+    const first = store.createCode(owner.account, { guardianId: GUARD, actions: ["mute"], nonce: NONCE });
+    const pair = store.acceptCode(guard.account, first.code);
+    const open = store.createCode(owner.account, { guardianId: "345678901234567890", actions: ["deafen"], nonce: NONCE });
+
+    assert.equal((await call("PATCH", `/admin/api/pairs/${pair.id}`, { cookie, body: { actions: ["deafen", "disconnect"] } })).status, 200);
+    assert.deepEqual(store.pairs[pair.id].actions, ["deafen", "disconnect"]);
+    const overview = await (await call("GET", "/admin/api/overview", { cookie })).json();
+    assert.equal(overview.codes.find(item => item.guardianId === "345678901234567890").code, open.code, "the admin sees whole codes");
+    assert.equal((await call("DELETE", `/admin/api/codes/${open.code}`, { cookie })).status, 200);
+    assert.equal(store.codes[open.code], undefined);
+
+    const events = await (await call("GET", `/admin/api/accounts/${guard.account}/events`, { cookie })).json();
+    assert.ok(events.some(event => event.type === "pairs"));
+    await call("DELETE", `/admin/api/accounts/${guard.account}/events`, { cookie });
+    assert.deepEqual(await (await call("GET", `/admin/api/accounts/${guard.account}/events`, { cookie })).json(), []);
+
+    assert.equal((await call("POST", "/admin/api/settings", { cookie, body: { maintenance: true } })).status, 200);
+    const blocked = await fetch(`${base}/v1/pairs`, { headers: { authorization: `Bearer ${owner.token}` } });
+    assert.equal(blocked.status, 503);
+    await call("POST", "/admin/api/settings", { cookie, body: { maintenance: false } });
+    assert.equal((await fetch(`${base}/v1/pairs`, { headers: { authorization: `Bearer ${owner.token}` } })).status, 200);
+    const logs = await (await call("GET", "/admin/api/logs", { cookie })).json();
+    assert.equal(logs[0].discordId, OWNER);
+    assert.ok(!JSON.stringify(logs).includes(owner.token), "the log never holds tokens");
+
+    const backup = await call("GET", "/admin/api/backup", { cookie });
+    assert.match(backup.headers.get("content-disposition"), /attachment/);
+    assert.ok((await backup.json()).accounts[owner.account]);
+
+    assert.equal((await call("POST", "/admin/api/password", { cookie, body: { current: "nope", next: "a new password" } })).status, 403);
+    assert.equal((await call("POST", "/admin/api/password", { cookie, body: { current: "correct horse", next: "short" } })).status, 400);
+    assert.equal((await call("POST", "/admin/api/password", { cookie, body: { current: "correct horse", next: "a new password" } })).status, 200);
+    assert.equal((await call("POST", "/admin/api/login", { body: { password: "correct horse" } })).status, 401);
+    const second = await login("a new password");
+
+    assert.equal((await call("POST", "/admin/api/wipe", { cookie: second, body: { confirm: "no" } })).status, 400);
+    assert.equal((await call("POST", "/admin/api/wipe", { cookie: second, body: { confirm: "WIPE" } })).status, 200);
+    assert.deepEqual([Object.keys(store.accounts).length, Object.keys(store.pairs).length], [0, 0]);
+
+    assert.equal((await call("POST", "/admin/api/restart", { cookie: second })).status, 200);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    assert.equal(restarted, 1);
 });
