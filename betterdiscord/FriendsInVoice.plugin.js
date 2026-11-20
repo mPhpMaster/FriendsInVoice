@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.20.0
+ * @version 1.20.1
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -222,6 +222,7 @@ var DEFAULTS = {
   showWhatsNew: true,
   autoStatus: false,
   autoAllowGuardCommands: false,
+  hideButton: false,
   statusInCall: "online",
   statusOutsideCall: "invisible",
   personalGuards: [],
@@ -238,7 +239,7 @@ function normalizeData(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const data = { ...DEFAULTS };
   for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands"])
+  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands", "hideButton"])
     if (typeof source[key] === "boolean") data[key] = source[key];
   for (const key of ["anthropicApiKey", "aiModel"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
@@ -2209,6 +2210,7 @@ var SWITCHES = [
   ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
   ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
   ["autoStatus", "Auto switch status: change your status when you join or leave a call"],
+  ["hideButton", "Hide the Friends In Voice button (Shift + F12 shows or hides it)"],
   ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
 ];
 var STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
@@ -2228,6 +2230,7 @@ function settingsPanel(view) {
     input.addEventListener("change", () => {
       view.data.set(key, input.checked);
       if (key === "autoStatus") view.autoStatus?.apply();
+      if (key === "hideButton" && view.launcher) view.launcher.hidden = input.checked;
       view.render();
     });
     add(label, input, element("span", "", title));
@@ -2275,6 +2278,7 @@ function settingsPanel(view) {
 
 // src/style.js
 var STYLE = `
+.fivbd-launch[hidden]{display:none}
 .fivbd-launch{position:fixed;bottom:82px;left:76px;z-index:9000;padding:8px 11px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--background-floating);color:var(--text-normal);cursor:pointer;box-shadow:0 4px 16px #0005}
 body.fivbd-open iframe[src*="discordsays.com"],body.fivbd-open [class*="pictureInPicture"]:has(iframe){visibility:hidden!important}
 .fivbd-shade{position:fixed;inset:0;z-index:10000;background:#0009;display:flex;align-items:center;justify-content:center;padding:18px}
@@ -3087,19 +3091,32 @@ var Dashboard = class {
     this.shade = null;
     this.onKey = (event) => {
       if (event.key === "Escape") this.close();
+      if (event.key === "F12" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleLauncher();
+      }
     };
   }
   start() {
     this.api.DOM.addStyle(STYLE);
     this.launcher = button("\u{1F50A} Friends In Voice", () => this.open(), "fivbd-launch");
+    this.launcher.hidden = !!this.data.value.hideButton;
     document.body.append(this.launcher);
-    document.addEventListener("keydown", this.onKey);
+    document.addEventListener("keydown", this.onKey, true);
   }
   stop() {
     this.close();
     this.launcher?.remove();
-    document.removeEventListener("keydown", this.onKey);
+    document.removeEventListener("keydown", this.onKey, true);
     this.api.DOM.removeStyle();
+  }
+  toggleLauncher() {
+    const hide = !this.data.value.hideButton;
+    this.data.set("hideButton", hide);
+    if (this.launcher) this.launcher.hidden = hide;
+    if (hide) this.close();
+    this.api.UI.showToast(hide ? "Friends In Voice button hidden. Press Shift + F12 to show it." : "Friends In Voice button shown.", { type: "info" });
   }
   error(error) {
     this.api.UI.showToast(error instanceof Error ? error.message : String(error), { type: "error" });
