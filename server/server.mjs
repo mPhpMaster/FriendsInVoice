@@ -60,6 +60,7 @@ export class GuardStore {
         this.queues = new Map();
         this.waiters = new Map();
         this.lastPoll = new Map();
+        this.lastSeen = new Map();
         if (file) {
             try {
                 const saved = JSON.parse(readFileSync(file, "utf8"));
@@ -96,6 +97,42 @@ export class GuardStore {
         if (changed) this.save();
     }
 
+    /** What the admin dashboard shows. Never includes token hashes. */
+    adminOverview() {
+        const now = this.now();
+        const pairCount = account => Object.values(this.pairs).filter(pair => pair.owner === account || pair.guardian === account).length;
+        const accounts = Object.entries(this.accounts).map(([account, item]) => ({
+            id: account, discordId: item.discordId, createdAt: item.createdAt, lastSeen: this.lastSeen.get(account) ?? null,
+            listening: this.online(account), pairs: pairCount(account),
+        })).sort((a, b) => (b.lastSeen ?? b.createdAt) - (a.lastSeen ?? a.createdAt));
+        const pairs = Object.values(this.pairs).map(pair => ({
+            id: pair.id, ownerId: this.accounts[pair.owner]?.discordId, guardianId: this.accounts[pair.guardian]?.discordId,
+            actions: pair.actions, createdAt: pair.createdAt, ownerListening: this.online(pair.owner),
+        })).sort((a, b) => b.createdAt - a.createdAt);
+        const codes = Object.entries(this.codes).filter(([, item]) => item.expiresAt > now).map(([code, item]) => ({
+            code: `${code.slice(0, 2)}••-••${code.slice(6)}`, ownerId: this.accounts[item.owner]?.discordId, guardianId: item.guardianId,
+            actions: item.actions, expiresAt: item.expiresAt,
+        }));
+        const queued = [...this.queues.values()].reduce((sum, queue) => sum + queue.events.filter(event => event.expiresAt > now).length, 0);
+        const waiting = [...this.waiters.values()].reduce((sum, set) => sum + set.size, 0);
+        return { accounts, pairs, codes, queued, waiting };
+    }
+
+    adminDeleteAccount(account) {
+        if (!this.accounts[account]) throw new HttpError(404, "No such account.");
+        for (const pair of Object.values(this.pairs)) if (pair.owner === account || pair.guardian === account) this.removePair(pair.id, account);
+        for (const [code, item] of Object.entries(this.codes)) if (item.owner === account) delete this.codes[code];
+        delete this.accounts[account];
+        this.queues.delete(account);
+        this.lastSeen.delete(account);
+        this.save();
+    }
+
+    adminDeletePair(pairId) {
+        if (!this.pairs[pairId]) throw new HttpError(404, "No such pairing.");
+        this.removePair(pairId);
+    }
+
     register(discordId, publicKey) {
         if (!SNOWFLAKE.test(discordId ?? "")) throw new HttpError(400, "Invalid Discord user ID.");
         if (!PUBLIC_KEY.test(publicKey ?? "")) throw new HttpError(400, "Invalid public key.");
@@ -111,7 +148,10 @@ export class GuardStore {
         if (!match) throw new HttpError(401, "Missing or invalid token.");
         const hash = Buffer.from(sha256(match[1]));
         for (const [account, item] of Object.entries(this.accounts)) {
-            if (item.tokenHash.length === hash.length && timingSafeEqual(Buffer.from(item.tokenHash), hash)) return account;
+            if (item.tokenHash.length === hash.length && timingSafeEqual(Buffer.from(item.tokenHash), hash)) {
+                this.lastSeen.set(account, this.now());
+                return account;
+            }
         }
         throw new HttpError(401, "Unknown token. Register again.");
     }
@@ -304,7 +344,21 @@ function readBody(request) {
     });
 }
 
-export function createApp({ store = new GuardStore(null), version = "dev" } = {}) {
+/** Requests and errors per minute for the last hour, for the dashboard */
+export function createStats(now = Date.now) {
+    const minutes = new Map();
+    const bump = key => {
+        const minute = Math.floor(now() / 60_000);
+        const entry = minutes.get(minute) ?? { requests: 0, errors: 0 };
+        entry[key]++;
+        minutes.set(minute, entry);
+        for (const old of minutes.keys()) if (old <= minute - 60) minutes.delete(old);
+    };
+    const sum = key => [...minutes.entries()].filter(([minute]) => minute > Math.floor(now() / 60_000) - 60).reduce((total, [, entry]) => total + entry[key], 0);
+    return { request: () => bump("requests"), error: () => bump("errors"), lastHour: () => sum("requests"), errorsLastHour: () => sum("errors") };
+}
+
+export function createApp({ store = new GuardStore(null), version = "dev", admin, stats = createStats() } = {}) {
     const registerLimit = new RateLimiter(20, 60 * 60_000);
     const requestLimit = new RateLimiter(120, 60_000);
     const codeLimit = new RateLimiter(20, 10 * 60_000);
@@ -355,11 +409,14 @@ export function createApp({ store = new GuardStore(null), version = "dev" } = {}
         let status = 200, body;
         try {
             const url = new URL(request.url ?? "/", "http://localhost");
+            const ip = String(request.headers["x-forwarded-for"] ?? request.socket.remoteAddress ?? "").split(",").pop().trim();
+            if (admin && await admin(request, response, url, ip, readBody)) return;
+            stats.request();
             body = await route(request, url, controller.signal);
         } catch (error) {
             status = error instanceof HttpError ? error.status : 500;
             body = { error: error instanceof HttpError ? error.message : "Server error." };
-            if (status === 500) console.error(error);
+            if (status >= 500) { stats.error(); console.error(error); }
         }
         if (response.writableEnded || response.destroyed) return;
         response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });

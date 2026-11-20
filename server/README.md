@@ -11,6 +11,10 @@ node --test test/server.test.mjs  # tests
 
 Put it behind HTTPS (the plugin refuses plain `http://` except for localhost). Long polls wait up to 25 seconds, so the proxy timeout must be longer. `deploy/` has the systemd unit, the Apache include and the install script used for `friendsinvoice.sarhsoft.com` on cPanel.
 
+## Admin dashboard
+
+`/admin` shows server health, accounts (Discord ID, last seen, whether the owner side is listening), pairings and open codes, and can remove a pairing or an account. It reads only this server's data: no Discord calls, no tokens or token hashes. It stays off until `ADMIN_PASSWORD_HASH` is set; `node hash-password.mjs < file` prints that line (empty input makes a random password and prints it to stderr). On the live server `deploy/install.sh` does this once and keeps the password in `/root/friendsinvoice-admin-password.txt` (root only). Login is limited to 10 tries per IP per 15 minutes; sessions last 12 hours in an HttpOnly, Secure, SameSite=Strict cookie.
+
 ## What it stores
 
 - Per install and Discord account: Discord user ID, ECDH public key, a SHA-256 hash of its random token.
