@@ -14,10 +14,10 @@ import { addServerListElement, removeServerListElement, ServerListRenderPosition
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classNameFactory } from "@utils/css";
 import definePlugin from "@utils/types";
-import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, showToast, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
+import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
-import { applyAutoStatus, cancelAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
+import { cancelAutoStatus, offerAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
 import { codeFromText } from "./guardServer";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
 import { GuardCodeCard } from "./personalGuardsCodes";
@@ -39,7 +39,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.20.1";
+const VERSION = "1.20.2";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -240,21 +240,37 @@ function FriendsInVoicePage() {
 
 const HEADSET_PATH = "M12 2a10 10 0 0 0-10 10v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H4.06A8 8 0 0 1 19.94 12H18a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5A10 10 0 0 0 12 2Z";
 
-// Shift + F12 shows or hides the server list button. The page, alerts and guards keep working while it's hidden.
+/** how long Shift + F12 shows the hidden button */
+const PEEK_MS = 5000;
+let peekUntil = 0;
+let peekTimer: ReturnType<typeof setTimeout> | undefined;
+const peekListeners = new Set<() => void>();
+
+// Shift + F12 opens (or closes) the page and shows the hidden button for 5 seconds.
+// Alerts and guards keep working while the button is hidden.
 function onToggleButtonKey(event: KeyboardEvent) {
     if (event.key !== "F12" || !event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
     event.preventDefault();
     event.stopPropagation();
-    const hide = !settings.store.hideButton;
-    settings.store.hideButton = hide;
-    if (hide) setPageOpen(false);
-    showToast({ text: hide ? "Friends in Voice button hidden. Press Shift + F12 to show it." : "Friends in Voice button shown.", variant: "success" });
+    setPageOpen(!pageOpen);
+    peekUntil = Date.now() + PEEK_MS;
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(() => peekListeners.forEach(listener => listener()), PEEK_MS + 50);
+    peekListeners.forEach(listener => listener());
+}
+
+function useButtonVisible() {
+    const { alwaysHideButton } = settings.use(["alwaysHideButton"]);
+    const [, rerender] = useReducer((x: number) => x + 1, 0);
+    useEffect(() => { peekListeners.add(rerender); return () => { peekListeners.delete(rerender); }; }, []);
+    return !alwaysHideButton || Date.now() < peekUntil;
 }
 
 function ServerListButton() {
     const open = usePageOpen();
 
-    const { hidden, hideButton } = settings.use(["hidden", "hideButton"]);
+    const { hidden } = settings.use(["hidden"]);
+    const visible = useButtonVisible();
     const count = useStateFromStores([VoiceStateStore, RelationshipStore], () => {
         let n = 0;
         for (const id of RelationshipStore.getFriendIDs()) {
@@ -265,7 +281,7 @@ function ServerListButton() {
 
     return (
         <>
-            {!hideButton && <Tooltip text={`Friends in Voice — ${count} friend${count === 1 ? "" : "s"} in voice`} position="right">
+            {visible && <Tooltip text={`Friends in Voice — ${count} friend${count === 1 ? "" : "s"} in voice`} position="right">
                 {props => (
                     <div
                         {...props}
@@ -315,13 +331,13 @@ function toggleAutoStatus() {
     const on = !settings.store.autoStatus;
     settings.store.autoStatus = on;
     ContextMenuApi.closeContextMenu();
-    void applyAutoStatus();
+    offerAutoStatus();
     const label = (value: string) => statusOptions("").find(option => option.value === value)?.label ?? value;
     showNotification({
-        title: `Auto switch status: ${on ? "ON" : "OFF"}`,
+        title: `Status suggestions: ${on ? "ON" : "OFF"}`,
         body: on
-            ? `${label(settings.store.statusInCall)} in calls, ${label(settings.store.statusOutsideCall)} otherwise. Change these in the plugin settings.`
-            : "Your status stays as it is now.",
+            ? `When you join or leave a call, you'll be asked about ${label(settings.store.statusInCall)} in calls and ${label(settings.store.statusOutsideCall)} otherwise. Nothing changes until you click.`
+            : "No more status suggestions.",
     });
 }
 
@@ -345,7 +361,7 @@ export function selfMenuItems() {
             })}
             <Menu.MenuCheckboxItem
                 id="vc-fiv-autoStatus"
-                label="Auto switch status in calls"
+                label="Status suggestions in calls"
                 checked={settings.store.autoStatus}
                 action={toggleAutoStatus}
             />
@@ -405,7 +421,7 @@ export default definePlugin({
             void loadAccount();
             void startGuardServer();
             setTimeout(() => void showWhatsNew(VERSION), 3000);
-            void applyAutoStatus();
+            offerAutoStatus();
         },
         LOGOUT() {
             stopGuardServer();
@@ -485,7 +501,7 @@ export default definePlugin({
         if (UserStore.getCurrentUser()) setTimeout(() => void showWhatsNew(VERSION), 3000);
         setTimeout(() => checkForUpdate(), 10_000);
         startUpdateTimer();
-        void applyAutoStatus();
+        offerAutoStatus();
     },
 
     stop() {
@@ -502,5 +518,6 @@ export default definePlugin({
         stopUpdateTimer();
         removeServerListElement(ServerListRenderPosition.Above, this.renderButton);
         window.removeEventListener("keydown", onToggleButtonKey, true);
+        clearTimeout(peekTimer);
     },
 });

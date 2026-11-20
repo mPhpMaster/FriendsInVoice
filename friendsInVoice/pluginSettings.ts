@@ -7,7 +7,7 @@
 import { definePluginSettings } from "@api/Settings";
 import { OptionType } from "@utils/types";
 
-import { applyAutoStatus, statusOptions } from "./autoStatus";
+import { offerAutoStatus, statusOptions } from "./autoStatus";
 import type { GuardGrant, GuardInvite } from "./personalGuardsTypes";
 
 export const settings = definePluginSettings({
@@ -61,31 +61,31 @@ export const settings = definePluginSettings({
     },
     autoStatus: {
         type: OptionType.BOOLEAN,
-        description: "Auto switch status: change your status when you join or leave a call (pick both statuses below)",
+        description: "Status suggestions: when you join or leave a call, a notification asks if you want to change your status (pick both statuses below). Nothing changes until you click it",
         default: false,
-        onChange: () => void applyAutoStatus(),
+        onChange: () => offerAutoStatus(),
     },
     statusInCall: {
         type: OptionType.SELECT,
-        description: "Auto switch status: your status while you're in a voice channel or call",
+        description: "Status suggestions: the status to suggest while you're in a voice channel or call",
         options: statusOptions("online"),
-        onChange: () => void applyAutoStatus(),
+        onChange: () => offerAutoStatus(),
     },
     statusOutsideCall: {
         type: OptionType.SELECT,
-        description: "Auto switch status: your status when you're not in a call",
+        description: "Status suggestions: the status to suggest when you're not in a call",
         options: statusOptions("invisible"),
-        onChange: () => void applyAutoStatus(),
+        onChange: () => offerAutoStatus(),
     },
     autoAllowGuardCommands: {
         type: OptionType.BOOLEAN,
         description: "Personal Guards: apply your guardians' commands right away, without asking you first (off: you get an Allow button and nothing happens until you click it)",
         default: false,
     },
-    hideButton: {
+    alwaysHideButton: {
         type: OptionType.BOOLEAN,
-        description: "Hide the Friends in Voice button in the server list (Shift + F12 shows or hides it)",
-        default: false,
+        description: "Keep the Friends in Voice button hidden in the server list. Shift + F12 opens the page and shows the button for 5 seconds",
+        default: true,
     },
     guardServer: {
         type: OptionType.STRING,
