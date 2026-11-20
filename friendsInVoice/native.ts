@@ -7,6 +7,7 @@
 import { IpcMainInvokeEvent } from "electron";
 
 export { getUpdateStatus, installUpdate } from "./updateInstaller";
+export { disableVencord } from "./vencordToggle";
 
 // Discord's content security policy blocks api.anthropic.com from the page, so the request runs here.
 // Raw HTTP instead of the Anthropic SDK: Vencord user plugins can't add npm dependencies.

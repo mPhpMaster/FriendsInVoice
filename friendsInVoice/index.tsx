@@ -13,8 +13,8 @@ import { isPluginEnabled } from "@api/PluginManager";
 import { addServerListElement, removeServerListElement, ServerListRenderPosition } from "@api/ServerList";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classNameFactory } from "@utils/css";
-import definePlugin from "@utils/types";
-import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
+import definePlugin, { type PluginNative } from "@utils/types";
+import { Alerts, ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
 import { cancelAutoStatus, offerAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
@@ -41,7 +41,22 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.23.0";
+const VERSION = "1.24.0";
+const ToggleNative = VencordNative.pluginHelpers.FriendsInVoice as PluginNative<typeof import("./native")>;
+
+// Restarts Discord without Vencord. A desktop shortcut brings it back (the plugin can't run while Vencord is off).
+function toggleVencord() {
+    Alerts.show({
+        title: "Turn Vencord off?",
+        body: "Discord closes and opens again as normal Discord, without Vencord or Friends in Voice. To turn Vencord back on, open the \"Discord + Vencord\" shortcut on your desktop. Running the Friends in Voice installer again also turns it back on.",
+        confirmText: "Restart without Vencord",
+        cancelText: "Cancel",
+        onConfirm: async () => {
+            const result = await ToggleNative.disableVencord();
+            if (!result.ok) showNotification({ title: "Toggle Vencord", body: result.error ?? "Couldn't turn Vencord off." });
+        },
+    });
+}
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -228,6 +243,8 @@ function FriendsInVoicePage() {
                     Discord only shares voice activity and online status for servers you're also in, so people in servers you haven't joined won't show up.
                     {" · "}v{VERSION}{" · "}
                     <span className={cl("link")} onClick={() => checkForUpdate(true)}>Check for updates</span>
+                    {" · "}
+                    <span className={cl("link")} title="Restart Discord without Vencord; a desktop shortcut turns it back on" onClick={toggleVencord}>Toggle Vencord</span>
                     {" · "}
                     <span className={cl("link")} title="Source code, releases and issues" onClick={() => VencordNative.native.openExternal(REPO_URL)}>GitHub</span>
                     {" · "}

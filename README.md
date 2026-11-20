@@ -113,6 +113,10 @@ Set a **Sync passphrase** (8+ characters) in the plugin settings, and use the sa
 
 People Discord hasn't loaded (for example someone in your Log who isn't in a server with you) are looked up once, then their name and avatar are saved and shown from the saved copy. To get a fresh name, right-click them → **Refresh name**.
 
+### Turning Vencord off for a while
+
+On Windows, **Toggle Vencord** at the bottom of the Friends in Voice page closes Discord and opens it again as normal Discord, without Vencord or any plugin. It also puts a **Discord + Vencord** shortcut on your desktop: open it to turn Vencord back on (it works after Discord updates too). Running the installer again also turns it back on.
+
 ### Updates
 
 The plugin checks GitHub for new releases (at startup and every 6 hours). On Windows, macOS and Linux, click the new-version notification to download the package from this repository's GitHub Release, verify its SHA-256 digest, install the plugin source, build Vencord, and restart Discord. Your plugin settings and other plugins stay in place. A failed build restores the previous source and tries to rebuild it. You need writable Vencord source and pnpm available to Discord. You can also click **Check for updates** at the bottom of the page. The check can be turned off in the plugin settings. Versions before v1.9.0, and Linux versions before v1.18.0, need one manual update to gain one-click updating.
