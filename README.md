@@ -14,6 +14,8 @@ See at a glance **which voice rooms your friends are in, who is with them, and j
 - **Full page, not a popup**: it covers Discord's main area next to the server list. Close it with ✕, `Esc`, or by clicking anything in the server list (a server or the Discord logo, which takes you back to your DMs).
 - **Click anyone to message them, right-click for Discord's menu**: on every tab, clicking a person (in a room, a "Here because of" name, a card or a list) opens your DM with them, and right-clicking opens Discord's normal user menu (Profile, Message, Call, Add Friend, … plus this plugin's options).
 
+Press **Shift + F12** to hide or show the Friends in Voice button in the server list; everything keeps working while it's hidden.
+
 ### 🔊 In voice (home tab)
 
 Every voice room that has at least one of your **friends** in it, laid out side by side:

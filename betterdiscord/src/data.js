@@ -11,7 +11,7 @@ const DEFAULTS = {
     watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [], hidden: [],
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
     anthropicApiKey: "", aiModel: "claude-opus-5-5", guardServer: "https://friendsinvoice.sarhsoft.com", checkForUpdates: true, showWhatsNew: true,
-    autoStatus: false, autoAllowGuardCommands: false, statusInCall: "online", statusOutsideCall: "invisible",
+    autoStatus: false, autoAllowGuardCommands: false, hideButton: false, statusInCall: "online", statusOutsideCall: "invisible",
     personalGuards: [], knownGuardGrants: [], pendingGuardInvites: [], declinedGuardInvites: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
 };
 export const isId = value => typeof value === "string" && /^\d{17,20}$/.test(value);
@@ -21,7 +21,7 @@ export function normalizeData(raw) {
     const source = raw && typeof raw === "object" ? raw : {};
     const data = { ...DEFAULTS };
     for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-    for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands"])
+    for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands", "hideButton"])
         if (typeof source[key] === "boolean") data[key] = source[key];
     for (const key of ["anthropicApiKey", "aiModel"])
         if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);

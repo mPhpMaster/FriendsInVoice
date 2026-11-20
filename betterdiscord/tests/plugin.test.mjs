@@ -48,7 +48,7 @@ function mockApi() {
 
 test("bundle has BetterDiscord metadata, starts, patches menu, and fully stops", async () => {
     const text = await readFile(pluginFile, "utf8");
-    assert.match(text, /^\/\*\*[\s\S]*@name FriendsInVoice[\s\S]*@version 1\.20\.0/);
+    assert.match(text, /^\/\*\*[\s\S]*@name FriendsInVoice[\s\S]*@version 1\.20\.1/);
     const directory = await mkdtemp(join(tmpdir(), "friendsinvoice-bd-test-"));
     const target = join(directory, "FriendsInVoice.plugin.js");
     const dom = new JSDOM("<!doctype html><html><body></body></html>");
@@ -64,6 +64,13 @@ test("bundle has BetterDiscord metadata, starts, patches menu, and fully stops",
         const plugin = new Plugin({ version: "1.10.0" });
         plugin.start();
         assert.ok(document.querySelector(".fivbd-launch"));
+        // Shift + F12 hides the launcher and shows it again
+        const press = () => document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "F12", shiftKey: true, bubbles: true }));
+        press();
+        assert.equal(document.querySelector(".fivbd-launch").hidden, true);
+        assert.equal(plugin.data.value.hideButton, true);
+        press();
+        assert.equal(document.querySelector(".fivbd-launch").hidden, false);
         // Personal Guards no longer watch Discord messages, reactions or channel switches
         for (const event of ["MESSAGE_CREATE", "MESSAGE_REACTION_ADD", "MESSAGE_REACTION_REMOVE", "CHANNEL_SELECT"])
             assert.ok(!calls.subscriptions.some(([name]) => name === event), event);
