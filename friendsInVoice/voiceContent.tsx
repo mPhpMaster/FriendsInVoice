@@ -10,9 +10,10 @@ import { classNameFactory } from "@utils/css";
 import { canonicalizeMatch } from "@utils/patches";
 import { Channel, User } from "@vencord/discord-types";
 import { findByPropsLazy, wreq } from "@webpack";
-import { ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, RelationshipStore, SelectedChannelStore, showToast, useEffect, useMemo, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
+import { ChannelRouter, ChannelStore, ContextMenuApi, GuildMemberStore, GuildStore, Menu, openUserProfileModal, PermissionsBits, PermissionStore, PresenceStore, React, RelationshipStore, SelectedChannelStore, showToast, useEffect, useMemo, useReducer, UserStore, UserUtils, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { inList, isOnline, openPrivateChannel,setPageOpen, settings, toggleInList } from ".";
+import { namesLoaded, rememberUser, savedName, savedUser, subscribeNames } from "./nameCache";
 const cl = classNameFactory("vc-fiv-");
 const { selectVoiceChannel } = findByPropsLazy("selectVoiceChannel", "selectChannel");
 export type ListKey = "watchlist" | "notifyOnline" | "blacklist" | "notifyVoice" | "hidden";// ---------- data ----------
@@ -272,8 +273,8 @@ export function Avatar({ user, size = 22 }: { user: User; size?: number; }) {
     return <img className={cl("avatar")} style={{ width: size, height: size }} src={user.getAvatarURL(undefined, 64)} alt="" />;
 }
 
-// people Discord hasn't loaded are fetched at most once per session, only while their row is on screen,
-// one at a time with a pause in between, and no more than 20 per session
+// People Discord hasn't loaded: their saved name is used. Someone never seen before is fetched once (then saved),
+// one at a time with a pause in between, at most 20 per session. Right-click → Refresh name fetches it again.
 const MAX_PROFILE_FETCHES = 20;
 const PROFILE_FETCH_GAP = 1500;
 const requestedUsers = new Set<string>();
@@ -284,7 +285,7 @@ function fetchNextProfile() {
     profileTimer = undefined;
     const id = profileQueue.shift();
     if (!id) return;
-    if (!UserStore.getUser(id)) UserUtils.getUser(id).catch(() => { });
+    if (!UserStore.getUser(id) && !savedName(id)) UserUtils.getUser(id).then(rememberUser, () => { });
     if (profileQueue.length) profileTimer = setTimeout(fetchNextProfile, PROFILE_FETCH_GAP);
 }
 
@@ -296,16 +297,21 @@ function queueProfile(id: string) {
 }
 
 export function useUser(id: string) {
-    const user = useStateFromStores([UserStore], () => UserStore.getUser(id));
+    const loaded = useStateFromStores([UserStore], () => UserStore.getUser(id));
+    const [, rerender] = useReducer((x: number) => x + 1, 0);
+    useEffect(() => subscribeNames(rerender), []);
     useEffect(() => {
-        if (!user) queueProfile(id);
+        if (loaded) { rememberUser(loaded); return; }
+        // wait until the saved names are read, so nobody is fetched just because the list wasn't loaded yet
+        if (!namesLoaded() || savedName(id)) return;
+        queueProfile(id);
         // a row that scrolled away before its turn doesn't need the profile anymore
         return () => {
             const index = profileQueue.indexOf(id);
             if (index !== -1) { profileQueue.splice(index, 1); requestedUsers.delete(id); }
         };
-    }, [id, user]);
-    return user;
+    }, [id, loaded, namesLoaded()]);
+    return loaded ?? savedUser(id);
 }
 
 const STATUS_LABEL: Record<string, string> = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", offline: "Offline" };

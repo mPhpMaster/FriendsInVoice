@@ -19,6 +19,7 @@ import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStor
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
 import { cancelAutoStatus, offerAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
 import { codeFromText } from "./guardServer";
+import { flushNames, loadNames } from "./nameCache";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
 import { GuardCodeCard } from "./personalGuardsCodes";
 import { GuardNotificationHost } from "./personalGuardsNotice";
@@ -29,6 +30,7 @@ import { PersonalGuardsTab } from "./personalGuardsTab";
 import { settings } from "./pluginSettings";
 import { SmartReplies } from "./smartReplies";
 import { startStayInVoiceLimit, stopStayInVoiceLimit } from "./stayInVoice";
+import { onSyncAccountChange, startSync, stopSync } from "./sync";
 import { UserContextPatch } from "./userContextMenu";
 import { useVoiceData, visibleVoiceChannelId } from "./voiceContent";
 import { flushVoiceLog, onGuildDelete, onGuildUpdate, onRelationshipAdd, onRelationshipRemove, onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
@@ -39,7 +41,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.20.2";
+const VERSION = "1.21.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -419,6 +421,7 @@ export default definePlugin({
         CONNECTION_OPEN() {
             startQuietPeriod();
             void loadAccount();
+            onSyncAccountChange();
             void startGuardServer();
             setTimeout(() => void showWhatsNew(VERSION), 3000);
             offerAutoStatus();
@@ -482,6 +485,8 @@ export default definePlugin({
             return <ErrorBoundary noop><GuardCodeCard message={message} channel={channel} /></ErrorBoundary>;
         });
 
+        void loadNames();
+        startSync();
         loadedAway.stayInVoice = settings.store.stayInVoice;
         loadedAway.neverIdle = settings.store.neverIdle;
         if (loadedAway.stayInVoice && !isPluginEnabled("DisableCallIdle")) startStayInVoiceLimit();
@@ -505,6 +510,8 @@ export default definePlugin({
     },
 
     stop() {
+        stopSync();
+        flushNames();
         stopStayInVoiceLimit();
         cancelAutoStatus();
         stopGuardServer();

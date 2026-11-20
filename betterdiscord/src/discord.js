@@ -30,6 +30,8 @@ export class DiscordBridge {
         this.voiceActions = webpack.getByKeys("toggleSelfMute", "toggleSelfDeaf");
         this.voiceChannelActions = webpack.getByKeys("selectVoiceChannel", "selectChannel");
         this.profileActions = webpack.getByKeys("openUserProfileModal");
+        // Discord's own "get user" helper; only used for right-click → Refresh name
+        this.userUtils = { getUser: webpack.getByStrings?.(".USER(", IN_EXPORTS) };
         this.rest = webpack.getByKeys("get", "put", "del", "post", IN_EXPORTS);
         // Discord's router exports transitionTo under a minified name; find it by its log message
         this.transitionTo = webpack.getByStrings?.("transitionTo - Transitioning to", IN_EXPORTS);
@@ -44,8 +46,17 @@ export class DiscordBridge {
     }
     name(id, guildId = null) {
         const user = this.user(id);
+        if (user) this.names?.remember(user);
+        const saved = user ?? this.names?.get(id);
         return this.relationshipStore.getNickname?.(id) ?? (guildId && this.memberStore?.getNick?.(guildId, id)) ??
-            user?.globalName ?? user?.username ?? id;
+            saved?.globalName ?? saved?.username ?? id;
+    }
+    /** right-click → Refresh name: the one time a name is asked from Discord. One request. */
+    async refreshName(id) {
+        const user = await this.userUtils?.getUser?.(id).catch(() => null) ?? this.user(id);
+        if (!user) return false;
+        this.names?.remember(user, true);
+        return true;
     }
     status(id) { return this.presenceStore?.getStatus?.(id) ?? "offline"; }
     voiceState(id) { return this.voiceStore.getVoiceStateForUser?.(id) ?? null; }

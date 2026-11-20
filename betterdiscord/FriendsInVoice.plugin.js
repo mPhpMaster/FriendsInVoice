@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.20.2
+ * @version 1.21.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -228,6 +228,7 @@ var DEFAULTS = {
   smartReplies: true,
   smartRepliesAi: false,
   anthropicApiKey: "",
+  syncPassphrase: "",
   aiModel: "claude-opus-5-5",
   guardServer: "https://friendsinvoice.sarhsoft.com",
   checkForUpdates: true,
@@ -253,7 +254,7 @@ function normalizeData(raw) {
   for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
   for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands", "alwaysHideButton"])
     if (typeof source[key] === "boolean") data[key] = source[key];
-  for (const key of ["anthropicApiKey", "aiModel"])
+  for (const key of ["anthropicApiKey", "aiModel", "syncPassphrase"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
   if (typeof source.guardServer === "string" && /^https:\/\/[^/\s]+\/?$/i.test(source.guardServer.trim())) data.guardServer = source.guardServer.trim();
   for (const key of ["statusInCall", "statusOutsideCall"])
@@ -317,6 +318,7 @@ var DataStore = class {
     if (!LISTS.includes(key) || !isId(id)) return false;
     this.value[key] = this.listHas(key, id) ? this.value[key].filter((item) => item !== id) : [...this.value[key], id];
     this.save();
+    this.onListChange?.(key);
     return true;
   }
   set(key, value) {
@@ -324,6 +326,7 @@ var DataStore = class {
     const candidate = normalizeData({ ...this.value, [key]: value });
     this.value[key] = candidate[key];
     this.save();
+    if (LISTS.includes(key)) this.onListChange?.(key);
     return true;
   }
   grant(id, actions) {
@@ -370,6 +373,7 @@ var DiscordBridge = class {
     this.voiceActions = webpack.getByKeys("toggleSelfMute", "toggleSelfDeaf");
     this.voiceChannelActions = webpack.getByKeys("selectVoiceChannel", "selectChannel");
     this.profileActions = webpack.getByKeys("openUserProfileModal");
+    this.userUtils = { getUser: webpack.getByStrings?.(".USER(", IN_EXPORTS) };
     this.rest = webpack.getByKeys("get", "put", "del", "post", IN_EXPORTS);
     this.transitionTo = webpack.getByStrings?.("transitionTo - Transitioning to", IN_EXPORTS);
     if (!this.userStore || !this.channelStore || !this.voiceStore || !this.relationshipStore || !this.permissionStore || !this.dispatcher)
@@ -387,7 +391,16 @@ var DiscordBridge = class {
   }
   name(id, guildId = null) {
     const user = this.user(id);
-    return this.relationshipStore.getNickname?.(id) ?? (guildId && this.memberStore?.getNick?.(guildId, id)) ?? user?.globalName ?? user?.username ?? id;
+    if (user) this.names?.remember(user);
+    const saved = user ?? this.names?.get(id);
+    return this.relationshipStore.getNickname?.(id) ?? (guildId && this.memberStore?.getNick?.(guildId, id)) ?? saved?.globalName ?? saved?.username ?? id;
+  }
+  /** right-click → Refresh name: the one time a name is asked from Discord. One request. */
+  async refreshName(id) {
+    const user = await this.userUtils?.getUser?.(id).catch(() => null) ?? this.user(id);
+    if (!user) return false;
+    this.names?.remember(user, true);
+    return true;
   }
   status(id) {
     return this.presenceStore?.getStatus?.(id) ?? "offline";
@@ -789,8 +802,8 @@ function newGuardNonce() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = bytes[6] & 15 | 64;
   bytes[8] = bytes[8] & 63 | 128;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  const hex2 = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex2.slice(0, 8)}-${hex2.slice(8, 12)}-${hex2.slice(12, 16)}-${hex2.slice(16, 20)}-${hex2.slice(20)}`;
 }
 function makeCommand(ownerId, action, inviteNonce) {
   return { kind: "command", ownerId, action, createdAt: Date.now(), nonce: newGuardNonce(), ...inviteNonce ? { inviteNonce } : {} };
@@ -1257,6 +1270,11 @@ function installUserMenu(api, view) {
           listItem(view, id, "notifyVoice", "Notify when in voice", "Stop voice alerts"),
           listItem(view, id, "blacklist", "Add to Run Away", "Remove from Run Away"),
           listItem(view, id, "hidden", "Hide from In Voice", "Show in In Voice"),
+          { id: "fivbd-refresh-name", label: "Refresh name", action: async () => {
+            const ok = await view.bridge.refreshName(id);
+            api.UI.showToast(ok ? "Name updated." : "Couldn't get the name from Discord.", { type: ok ? "success" : "error" });
+            view.refresh();
+          } },
           { type: "submenu", id: "fivbd-guards", label: "Personal Guards", items: guardItems }
         ]
       }]);
@@ -1268,6 +1286,57 @@ function installUserMenu(api, view) {
     }
   });
 }
+
+// src/names.js
+var MAX = 5e3;
+var NameCache = class {
+  constructor(store = accountStore("meta")) {
+    this.store = store;
+    this.names = /* @__PURE__ */ new Map();
+    this.timer = null;
+  }
+  async load() {
+    const saved = await this.store.get("names").catch(() => null);
+    for (const item of Array.isArray(saved) ? saved : []) if (item?.id && item.username && !this.names.has(item.id)) this.names.set(item.id, item);
+  }
+  all() {
+    return [...this.names.values()];
+  }
+  get(id) {
+    return this.names.get(id);
+  }
+  /** newer entries win; used for names from another device */
+  merge(items = []) {
+    let changed = false;
+    for (const item of items) {
+      if (!item?.id || !item.username) continue;
+      const current = this.names.get(item.id);
+      if (current && current.savedAt >= item.savedAt) continue;
+      this.names.set(item.id, item);
+      changed = true;
+    }
+    if (changed) this.save();
+    return changed;
+  }
+  remember(user, force = false) {
+    if (!user?.id || !user.username) return;
+    const current = this.names.get(user.id), globalName = user.globalName ?? null;
+    if (!force && current && current.username === user.username && current.globalName === globalName) return;
+    this.names.set(user.id, { id: user.id, username: user.username, globalName, avatar: user.avatar ?? null, savedAt: Date.now() });
+    this.save();
+    this.onChange?.();
+  }
+  save() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), 1e3);
+  }
+  flush() {
+    clearTimeout(this.timer);
+    this.timer = null;
+    return this.store.put("names", this.all().slice(-MAX)).catch(() => {
+    });
+  }
+};
 
 // ../friendsInVoice/smartReplyQuestionRules.ts
 var QUESTION_RULES = [
@@ -2271,7 +2340,8 @@ function settingsPanel(view) {
   }
   for (const [key, title, type] of [
     ["anthropicApiKey", "Claude API key (saved on this computer)", "password"],
-    ["aiModel", "Claude model", "text"]
+    ["aiModel", "Claude model", "text"],
+    ["syncPassphrase", "Sync passphrase (8+ characters): syncs My List, alerts, Hidden, the Log and saved names between your devices, encrypted so the server can't read them. Same one on every device; empty = this computer only", "password"]
   ]) {
     const label = element("label");
     label.style.alignItems = "flex-start";
@@ -2284,9 +2354,227 @@ function settingsPanel(view) {
     add(label, element("span", "", title), input);
     root.append(label);
   }
+  root.append(button("Sync now", () => void view.sync?.run(true)));
   root.append(button("Check for updates", () => void view.alerts.checkUpdate(true)), button("Open GitHub", () => openLink(REPO_URL)));
   return root;
 }
+
+// ../friendsInVoice/syncCore.ts
+var SYNC_LISTS = ["watchlist", "notifyOnline", "blacklist", "notifyVoice", "hidden"];
+var ITERATIONS = 2e5;
+var MAX_LOG = 5e3;
+var MAX_NAMES = 5e3;
+var subtle = () => globalThis.crypto.subtle;
+var b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function fromB64url(text) {
+  const raw = atob(text.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((text.length + 3) % 4));
+  return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+}
+var hex = (bytes) => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+async function deriveSyncKeys(passphrase, discordId) {
+  const base = await subtle().importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveBits"]);
+  const bits = new Uint8Array(await subtle().deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: new TextEncoder().encode(`fiv-sync:${discordId}`), iterations: ITERATIONS },
+    base,
+    96 * 8
+  ));
+  const idPart = bits.slice(0, 32), writePart = bits.slice(32, 64), encPart = bits.slice(64, 96);
+  return {
+    blobId: hex(new Uint8Array(await subtle().digest("SHA-256", idPart))),
+    proof: b64url(writePart),
+    key: await subtle().importKey("raw", encPart, "AES-GCM", false, ["encrypt", "decrypt"])
+  };
+}
+async function sealSync(data, key) {
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await subtle().encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(data))));
+  const out = new Uint8Array(iv.length + cipher.length);
+  out.set(iv);
+  out.set(cipher, iv.length);
+  return b64url(out);
+}
+async function openSync(blob, key) {
+  try {
+    const bytes = fromB64url(blob);
+    const plain = await subtle().decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, key, bytes.slice(12));
+    return normalizeSync(JSON.parse(new TextDecoder().decode(plain)));
+  } catch {
+    return null;
+  }
+}
+var isId2 = (value) => typeof value === "string" && /^\d{17,20}$/.test(value);
+function normalizeSync(raw) {
+  const lists = {};
+  for (const key of SYNC_LISTS) {
+    const list = raw?.lists?.[key];
+    if (list && Array.isArray(list.ids) && Number.isFinite(list.changedAt)) lists[key] = { ids: [...new Set(list.ids.filter(isId2))], changedAt: list.changedAt };
+  }
+  const log = (Array.isArray(raw?.log) ? raw.log : []).filter((entry) => Number.isFinite(entry?.time) && typeof entry.kind === "string" && isId2(entry.userId));
+  const names = (Array.isArray(raw?.names) ? raw.names : []).filter((name) => isId2(name?.id) && typeof name.username === "string" && Number.isFinite(name.savedAt));
+  return { lists, log, names };
+}
+var logId = (entry) => `${entry.time}:${entry.userId}:${entry.kind}`;
+function mergeSync(a, b) {
+  const lists = {};
+  for (const key of SYNC_LISTS) {
+    const x = a.lists[key], y = b.lists[key];
+    const pick3 = !x ? y : !y ? x : y.changedAt > x.changedAt ? y : x;
+    if (pick3) lists[key] = { ids: [...pick3.ids], changedAt: pick3.changedAt };
+  }
+  const log = /* @__PURE__ */ new Map();
+  for (const entry of [...a.log, ...b.log]) if (!log.has(logId(entry))) log.set(logId(entry), entry);
+  const names = /* @__PURE__ */ new Map();
+  for (const name of [...a.names, ...b.names]) {
+    const current = names.get(name.id);
+    if (!current || name.savedAt > current.savedAt) names.set(name.id, name);
+  }
+  return {
+    lists,
+    log: [...log.values()].sort((x, y) => y.time - x.time).slice(0, MAX_LOG),
+    names: [...names.values()].sort((x, y) => y.savedAt - x.savedAt).slice(0, MAX_NAMES)
+  };
+}
+var SyncError = class extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+};
+function failure(response) {
+  if (response.status === 0) return new SyncError(0, "Can't reach the Friends in Voice server.");
+  if (response.status === 403) return new SyncError(403, "This sync passphrase doesn't match the one used before for this account.");
+  if (response.status === 507) return new SyncError(507, "The Friends in Voice server is out of space for sync right now.");
+  if (response.status === 429) return new SyncError(429, "The server asked to slow down. Sync will try again later.");
+  return new SyncError(response.status, String(response.body?.error ?? `Sync failed (${response.status}).`));
+}
+async function syncOnce(options) {
+  const { transport, server, keys } = options;
+  const url = `${server.replace(/\/+$/, "")}/v1/sync/${keys.blobId}`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const got = await transport({ method: "GET", url, timeoutMs: 2e4 });
+    if (got.status !== 200 && got.status !== 404) throw failure(got);
+    let remote = { lists: {}, log: [], names: [] };
+    const baseVersion = got.status === 200 ? Number(got.body?.version) || 0 : 0;
+    if (got.status === 200 && typeof got.body?.data === "string") {
+      const opened = await openSync(got.body.data, keys.key);
+      if (!opened) throw new SyncError(403, "This sync passphrase can't open the saved copy.");
+      remote = opened;
+    }
+    const merged = mergeSync(options.local, remote);
+    if (got.status === 200 && JSON.stringify(merged) === JSON.stringify(mergeSync(remote, remote))) return merged;
+    const put = await transport({ method: "PUT", url, body: { proof: keys.proof, baseVersion, data: await sealSync(merged, keys.key) }, timeoutMs: 3e4 });
+    if (put.status === 200) return merged;
+    if (put.status !== 409) throw failure(put);
+  }
+  throw new SyncError(409, "Another device kept saving at the same time. Sync will try again later.");
+}
+
+// src/sync.js
+var PUSH_DELAY = 6e4;
+var PULL_EVERY = 15 * 6e4;
+var logId2 = (entry) => `${entry.time}:${entry.userId}:${entry.kind}`;
+var SyncService = class {
+  constructor(api, bridge, data, voiceLog, options = {}) {
+    Object.assign(this, { api, bridge, data, voiceLog });
+    this.transport = options.transport ?? netTransport(api);
+    this.meta = options.meta ?? accountStore("meta");
+    this.timers = options.timers ?? { set: setTimeout, clear: clearTimeout, every: setInterval, stopEvery: clearInterval };
+    this.changedAt = {};
+    this.metaAccount = null;
+    this.keys = null;
+    this.running = null;
+    this.applying = false;
+    this.lastError = "";
+  }
+  enabled() {
+    return (this.data.value.syncPassphrase ?? "").trim().length >= 8;
+  }
+  start() {
+    this.data.onListChange = (key) => this.listChanged(key);
+    this.pull = this.timers.every(() => void this.run(), PULL_EVERY);
+  }
+  stop() {
+    this.data.onListChange = null;
+    this.timers.clear(this.pushTimer);
+    this.timers.stopEvery(this.pull);
+  }
+  async loadMeta(account) {
+    if (this.metaAccount === account) return;
+    this.changedAt = await this.meta.get(`syncMeta_${account}`).catch(() => null) ?? {};
+    this.metaAccount = account;
+  }
+  listChanged(key) {
+    const account = this.data.accountId;
+    if (this.applying || !account || !SYNC_LISTS.includes(key)) return;
+    this.changedAt[key] = Date.now();
+    void this.meta.put(`syncMeta_${account}`, { ...this.changedAt }).catch(() => {
+    });
+    this.schedule();
+  }
+  /** called after the Log or names change */
+  schedule() {
+    if (this.applying || !this.enabled()) return;
+    this.timers.clear(this.pushTimer);
+    this.pushTimer = this.timers.set(() => void this.run(), PUSH_DELAY);
+  }
+  local() {
+    const lists = {};
+    for (const key of SYNC_LISTS) lists[key] = { ids: [...this.data.value[key]], changedAt: this.changedAt[key] ?? 0 };
+    const log = this.voiceLog.entries.map(({ key, ...entry }) => entry);
+    return { lists, log, names: this.bridge.names?.all() ?? [] };
+  }
+  apply(account, merged) {
+    this.applying = true;
+    try {
+      for (const key of SYNC_LISTS) {
+        const remote = merged.lists[key];
+        if (!remote || remote.changedAt <= (this.changedAt[key] ?? 0)) continue;
+        this.data.value[key] = [...remote.ids];
+        this.changedAt[key] = remote.changedAt;
+      }
+      this.data.save();
+      const known = new Set(this.voiceLog.entries.map(logId2));
+      const added = merged.log.filter((entry) => !known.has(logId2(entry)));
+      if (added.length) {
+        this.voiceLog.entries = [...this.voiceLog.entries, ...added.map((entry) => ({ ...entry, key: this.voiceLog.nextKey++ }))].sort((a, b) => b.time - a.time).slice(0, 5e3);
+        this.voiceLog.onChange?.();
+        this.voiceLog.save();
+      }
+      this.bridge.names?.merge(merged.names);
+    } finally {
+      this.applying = false;
+    }
+    void this.meta.put(`syncMeta_${account}`, { ...this.changedAt }).catch(() => {
+    });
+  }
+  run(manual = false) {
+    this.running ??= (async () => {
+      const account = this.data.accountId;
+      if (!this.enabled() || !account || this.voiceLog.accountId !== account) {
+        if (manual) this.api.UI.showToast("Set a sync passphrase (8+ characters) first.", { type: "error" });
+        return;
+      }
+      await this.loadMeta(account);
+      const passphrase = this.data.value.syncPassphrase.trim();
+      try {
+        if (this.keys?.account !== account || this.keys.passphrase !== passphrase)
+          this.keys = { account, passphrase, keys: await deriveSyncKeys(passphrase, account) };
+        const merged = await syncOnce({ transport: this.transport, server: this.data.value.guardServer || DEFAULT_GUARD_SERVER, keys: this.keys.keys, local: this.local() });
+        if (this.data.accountId === account) this.apply(account, merged);
+        this.lastError = "";
+        if (manual) this.api.UI.showToast("Synced.", { type: "success" });
+      } catch (error) {
+        const message = error?.message ?? String(error);
+        if (manual || message !== this.lastError && !(error instanceof SyncError && error.status === 0))
+          this.api.UI.showToast(`Sync: ${message}`, { type: "error" });
+        this.lastError = message;
+      }
+    })().finally(() => {
+      this.running = null;
+    });
+    return this.running;
+  }
+};
 
 // src/style.js
 var STYLE = `
@@ -3213,6 +3501,8 @@ module.exports = class FriendsInVoice {
     try {
       this.data = new DataStore(this.api);
       this.bridge = new DiscordBridge(this.api);
+      this.bridge.names = new NameCache();
+      void this.bridge.names.load().then(() => this.view?.refresh());
       this.view = new Dashboard(this.api, this.bridge, this.data, this.version);
       this.guards = new GuardService(this.api, this.bridge, this.data, (tab) => this.view.open(tab));
       this.guards.changed = () => this.view.refresh();
@@ -3221,17 +3511,21 @@ module.exports = class FriendsInVoice {
       this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
       this.whatsNew = new WhatsNew(this.api, this.data, this.version);
       this.autoStatus = new AutoStatus(this.api, this.bridge, this.data);
+      this.sync = new SyncService(this.api, this.bridge, this.data, this.voiceLog);
+      this.bridge.names.onChange = () => this.sync.schedule();
       this.voiceLog.onChange = () => {
         if (this.view.tab === "log") this.view.refresh();
+        this.sync.schedule();
       };
-      Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus });
+      Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus, sync: this.sync });
       this.view.start();
       this.unsubscribers.push(installUserMenu(this.api, this.view));
       const loadAccount = async () => {
         const id = this.bridge.currentId();
         await this.data.useAccount(id);
-        void this.voiceLog.useAccount(id);
+        await this.voiceLog.useAccount(id);
         if (this.started) void this.guards.start();
+        this.syncTimer = setTimeout(() => void this.sync.run(), 5e3);
       };
       this.data.onAccount = () => this.view.refresh();
       const showWhatsNew = () => {
@@ -3274,6 +3568,7 @@ module.exports = class FriendsInVoice {
       this.voiceLog.seed();
       this.alerts.seed();
       this.autoStatus.apply();
+      this.sync.start();
       this.pollTimer = setInterval(() => {
         this.alerts.poll();
         this.view.refresh();
@@ -3300,6 +3595,9 @@ module.exports = class FriendsInVoice {
       }
     }
     this.autoStatus?.cancel();
+    clearTimeout(this.syncTimer);
+    this.sync?.stop();
+    void this.bridge?.names?.flush();
     this.guards?.stop();
     this.voiceLog?.stop();
     this.view?.stop();

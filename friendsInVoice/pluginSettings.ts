@@ -87,6 +87,12 @@ export const settings = definePluginSettings({
         description: "Keep the Friends in Voice button hidden in the server list. Shift + F12 opens the page and shows the button for 5 seconds",
         default: true,
     },
+    syncPassphrase: {
+        type: OptionType.STRING,
+        description: "Sync passphrase (8+ characters): syncs My list, the alert lists, Hidden, the Log and saved names between your devices through the Friends in Voice server, encrypted with this passphrase so the server can't read them. Use the same one on every device. Leave empty to keep everything on this computer only",
+        default: "",
+        placeholder: "a passphrase only you know",
+    },
     guardServer: {
         type: OptionType.STRING,
         description: "Personal Guards server (pairing codes and encrypted guard commands go here, never through Discord). Leave it as is unless you run your own",

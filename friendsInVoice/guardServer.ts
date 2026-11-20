@@ -16,7 +16,7 @@ const POLL_WAIT = 25_000;
 const CODE_TEXT = /Friends in Voice guard code:\s*([A-HJ-NP-Z2-9]{4})-?([A-HJ-NP-Z2-9]{4})/;
 
 export interface GuardRequest {
-    method: "GET" | "POST" | "PATCH" | "DELETE";
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     url: string;
     token?: string;
     body?: unknown;
