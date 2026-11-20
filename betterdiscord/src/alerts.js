@@ -18,7 +18,7 @@ export class AlertService {
         const settings = this.data.value;
         for (const id of new Set([...settings.notifyOnline, ...settings.blacklist]))
             this.previousStatus.set(id, this.bridge.status(id));
-        for (const id of settings.notifyVoice) this.previousVoice.set(id, this.bridge.voiceChannel(id));
+        for (const id of settings.notifyVoice) this.previousVoice.set(id, this.bridge.visibleVoiceChannel(id));
     }
     reconnect() {
         this.quietUntil = Date.now() + 15000;
@@ -45,7 +45,7 @@ export class AlertService {
             }
         }
         for (const id of settings.notifyVoice) {
-            const now = this.bridge.voiceChannel(id);
+            const now = this.bridge.visibleVoiceChannel(id);
             const before = this.previousVoice.get(id);
             this.previousVoice.set(id, now);
             if (Date.now() < this.quietUntil || before === undefined || before || !now) continue;

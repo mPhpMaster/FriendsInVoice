@@ -113,7 +113,7 @@ export class VoiceLog {
     }
     room(channelId) {
         const channel = channelId && this.bridge.channel(channelId);
-        return channel ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
+        return channel && this.bridge.canSee(channel) ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
     }
     onUpdates(voiceStates = []) {
         const me = this.bridge.currentId();

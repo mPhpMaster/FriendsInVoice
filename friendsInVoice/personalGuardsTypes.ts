@@ -83,7 +83,12 @@ export interface GuardEvent {
     id: string;
     guardianId: string;
     action: GuardAction;
-    undo(): void;
+    /** set once the action ran; until then the owner is asked first */
+    undo?(): void;
+    /** asks first (the default): runs the action only after the owner clicks Allow. Resolves to the undo, or null */
+    allow?(): Promise<(() => void) | null>;
+    /** a request nobody answered is dropped after this time */
+    expiresAt?: number;
 }
 
 export interface IncomingMessage {

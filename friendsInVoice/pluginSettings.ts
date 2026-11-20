@@ -49,7 +49,7 @@ export const settings = definePluginSettings({
     },
     stayInVoice: {
         type: OptionType.BOOLEAN,
-        description: "Stay in voice when you're away: don't get moved to the server's AFK channel or dropped from a DM call",
+        description: "Stay in voice when you're away: don't get moved to the server's AFK channel or dropped from a DM call, for up to 2 hours without mouse or keyboard",
         default: false,
         restartNeeded: true,
     },
@@ -76,6 +76,11 @@ export const settings = definePluginSettings({
         description: "Auto switch status: your status when you're not in a call",
         options: statusOptions("invisible"),
         onChange: () => void applyAutoStatus(),
+    },
+    autoAllowGuardCommands: {
+        type: OptionType.BOOLEAN,
+        description: "Personal Guards: apply your guardians' commands right away, without asking you first (off: you get an Allow button and nothing happens until you click it)",
+        default: false,
     },
     guardServer: {
         type: OptionType.STRING,

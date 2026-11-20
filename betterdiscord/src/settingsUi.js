@@ -7,7 +7,8 @@ const SWITCHES = [
     ["smartRepliesAi", "Enable the optional Claude reply button"],
     ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
     ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
-    ["autoStatus", "Auto switch status: change your status when you join or leave a call"]
+    ["autoStatus", "Auto switch status: change your status when you join or leave a call"],
+    ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
 ];
 const STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 

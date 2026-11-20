@@ -15,6 +15,7 @@ export function VoiceTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
     const { rooms, myChannel } = data;
     const { hidden } = settings.use(["hidden"]);
     const [query, setQuery] = useState("");
+    const [showAllHidden, setShowAllHidden] = useState(false);
     const q = query.trim().toLowerCase();
 
     const filtered = q
@@ -43,12 +44,20 @@ export function VoiceTab({ data }: { data: ReturnType<typeof useVoiceData>; }) {
             {hidden.length > 0 && (
                 <div className={cl("hidden-bar")}>
                     <span className={cl("reason-label")} title="Hidden people don't show up in In voice or count in the badge">🙈 Hidden</span>
-                    {hidden.map(id => <HiddenChip key={id} id={id} />)}
+                    {(showAllHidden ? hidden : hidden.slice(0, HIDDEN_PREVIEW)).map(id => <HiddenChip key={id} id={id} />)}
+                    {hidden.length > HIDDEN_PREVIEW && (
+                        <button className={cl("hidden-toggle")} onClick={() => setShowAllHidden(!showAllHidden)}>
+                            {showAllHidden ? "Show less" : `Show all (${hidden.length})`}
+                        </button>
+                    )}
                 </div>
             )}
         </>
     );
 }
+
+/** the Hidden bar shows this many people until you click "Show all" */
+const HIDDEN_PREVIEW = 3;
 
 function HiddenChip({ id }: { id: string; }) {
     const user = useUser(id);
