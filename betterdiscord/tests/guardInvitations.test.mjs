@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { indexedDB } from "fake-indexeddb";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { fakeGuardServer } from "./fakeGuardServer.mjs";
@@ -67,14 +67,36 @@ test("pairing with a code and a guard command go only through the Friends in Voi
         await guardian.sendCommand(ownerId, "disconnect");
         const { events } = await owner.client.events(before, 0);
         await owner.onEvents(events);
-        assert.deepEqual(applied, [], "nothing runs before you click Allow");
+        assert.deepEqual(applied, [], "nothing runs right away");
         assert.equal(notices.length, 1);
-        assert.match(notices[0].text, /wants to use/);
-        const allow = notices[0].options.buttons.find(item => item.label === "Allow");
+        assert.match(notices[0].text, /in 10 seconds/);
+        const allow = notices[0].options.buttons.find(item => item.label === "Allow now");
         allow.onClick();
         allow.onClick();
-        assert.deepEqual(applied, ["mute"], "only the allowed action runs, once, after Allow");
+        assert.deepEqual(applied, ["mute"], "only the allowed action runs, once, after Allow now");
         assert.equal(notices.length, 2);
+
+        // no answer: it runs by itself after 10 seconds. Refused: it never runs.
+        mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+        try {
+            const command = async action => {
+                mock.timers.tick(4000); // past the 3 second cooldown between commands
+                const last = (await owner.client.events(0, 0)).last;
+                await guardian.sendCommand(ownerId, action);
+                await owner.onEvents((await owner.client.events(last, 0)).events);
+                return notices.at(-1);
+            };
+            await command("deafen");
+            mock.timers.tick(9000);
+            assert.deepEqual(applied, ["mute"], "still waiting after 9 seconds");
+            mock.timers.tick(1000);
+            assert.deepEqual(applied, ["mute", "deafen"], "applied by itself after 10 seconds");
+
+            const asked = await command("mute");
+            asked.options.buttons.find(item => item.label === "Refuse").onClick();
+            mock.timers.tick(20_000);
+            assert.deepEqual(applied, ["mute", "deafen"], "a refused command never runs");
+        } finally { mock.timers.reset(); }
 
         owner.revoke(guardianId);
         await new Promise(resolve => setTimeout(resolve, 50));

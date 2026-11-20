@@ -225,19 +225,24 @@ export class GuardService {
             ] });
         };
         if (this.data.value.autoAllowGuardCommands) return run();
-        // Ask first: nothing changes on your account until you click Allow yourself, within a minute.
-        const expiresAt = Date.now() + GUARD_REQUEST_TTL;
+        // Ask first, briefly: Allow now or Refuse; with no answer it runs by itself after 10 seconds.
         let answered = false;
-        this.api.UI.showNotice(`${this.bridge.name(sender)} wants to use ${GUARD_LABELS[payload.action]} on your account.`, { timeout: GUARD_REQUEST_TTL, buttons: [
-            { label: "Allow", onClick: () => {
-                if (answered || Date.now() > expiresAt || this.current() !== me) return;
-                answered = true;
-                if (!this.bridge.sharesVoice(sender)) return this.error("You're no longer in the same voice channel.");
-                run();
-            } }, block
+        const allow = () => {
+            if (answered || this.current() !== me) return;
+            answered = true;
+            clearTimeout(timer);
+            if (!this.bridge.sharesVoice(sender)) return this.error("You're no longer in the same voice channel.");
+            run();
+        };
+        const refuse = () => { if (!answered) { answered = true; clearTimeout(timer); } };
+        const timer = setTimeout(allow, GUARD_REQUEST_TTL);
+        this.api.UI.showNotice(`${this.bridge.name(sender)} will use ${GUARD_LABELS[payload.action]} on your account in 10 seconds.`, { timeout: GUARD_REQUEST_TTL, buttons: [
+            { label: "Allow now", onClick: allow },
+            { label: "Refuse", onClick: refuse },
+            { ...block, onClick: () => { refuse(); block.onClick(); } }
         ] });
     }
 }
 
-/** a guard request nobody answered stops working after this long */
-export const GUARD_REQUEST_TTL = 60_000;
+/** a guard request nobody answers runs by itself after this long, unless it was refused */
+export const GUARD_REQUEST_TTL = 10_000;

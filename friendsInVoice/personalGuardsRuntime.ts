@@ -284,21 +284,31 @@ export async function handleServerCommand(store: GuardsStore, event: ServerEvent
         if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`, body: `${GUARD_LABELS[payload.action]} applied. Click to undo.`, permanent: true, onClick: undo });
         return;
     }
-    // Ask first: nothing changes on your account until you click Allow yourself.
-    const expiresAt = Date.now() + GUARD_REQUEST_TTL;
-    let answered = false;
-    const allow = async () => {
-        if (answered || Date.now() > expiresAt) return null;
-        answered = true;
+    // Ask first, briefly: you get a notice with Allow and Refuse. If you don't answer within 10 seconds, it runs.
+    const autoAllowAt = Date.now() + GUARD_AUTO_ALLOW;
+    let refused = false;
+    let result: Promise<(() => void) | null> | undefined;
+    const allow = () => result ??= (async () => {
+        clearTimeout(timer);
+        if (refused) return null;
         if (!sharesVoice(senderId)) { sendError("You're no longer in the same voice channel."); return null; }
         return runAction(payload.action);
+    })();
+    const refuse = () => {
+        if (result) return false;
+        refused = true;
+        clearTimeout(timer);
+        return true;
     };
-    const guardEvent: GuardEvent = { id: key, guardianId: senderId, action: payload.action, allow, expiresAt };
+    const timer = setTimeout(() => void allow(), GUARD_AUTO_ALLOW);
+    const guardEvent: GuardEvent = { id: key, guardianId: senderId, action: payload.action, allow, refuse, autoAllowAt, expiresAt: autoAllowAt };
     for (const listener of eventListeners) listener(guardEvent);
-    if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`, body: `Wants to ${GUARD_VERBS[payload.action].toLowerCase()} you. Click to allow.`, onClick: () => void allow() });
+    if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`,
+        body: `Will ${GUARD_VERBS[payload.action].toLowerCase()} you in 10 seconds. Click to refuse.`, onClick: () => void refuse() });
 }
 
-const GUARD_REQUEST_TTL = 60_000;
+/** how long you have to refuse a guard's command before it runs by itself */
+export const GUARD_AUTO_ALLOW = 10_000;
 
 async function runAction(action: GuardAction): Promise<(() => void) | null> {
     let undo: (() => void) | null;

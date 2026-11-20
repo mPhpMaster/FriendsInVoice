@@ -85,10 +85,14 @@ export interface GuardEvent {
     action: GuardAction;
     /** set once the action ran; until then the owner is asked first */
     undo?(): void;
-    /** asks first (the default): runs the action only after the owner clicks Allow. Resolves to the undo, or null */
+    /** asks first (the default): runs the action now, or by itself once autoAllowAt passes. Resolves to the undo, or null */
     allow?(): Promise<(() => void) | null>;
     /** a request nobody answered is dropped after this time */
     expiresAt?: number;
+    /** when nobody answers, the action runs by itself at this time */
+    autoAllowAt?: number;
+    /** stops the request; true if it hadn't run yet */
+    refuse?(): boolean;
 }
 
 export interface IncomingMessage {
