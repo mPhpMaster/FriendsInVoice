@@ -52,7 +52,8 @@ export function settingsPanel(view) {
     }
     for (const [key, title, type] of [
         ["anthropicApiKey", "Claude API key (saved on this computer)", "password"],
-        ["aiModel", "Claude model", "text"]
+        ["aiModel", "Claude model", "text"],
+        ["syncPassphrase", "Sync passphrase (8+ characters): syncs My List, alerts, Hidden, the Log and saved names between your devices, encrypted so the server can't read them. Same one on every device; empty = this computer only", "password"]
     ]) {
         const label = element("label");
         label.style.alignItems = "flex-start";
@@ -65,6 +66,7 @@ export function settingsPanel(view) {
         add(label, element("span", "", title), input);
         root.append(label);
     }
+    root.append(button("Sync now", () => void view.sync?.run(true)));
     root.append(button("Check for updates", () => void view.alerts.checkUpdate(true)), button("Open GitHub", () => openLink(REPO_URL)));
     return root;
 }

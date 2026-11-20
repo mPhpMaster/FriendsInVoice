@@ -75,7 +75,21 @@ export function switchVoiceLog(accountId: string) {
     if (logKey) entries = [];
     logKey = storeKey(accountId);
     emit();
-    void loadVoiceLog(logKey);
+    logLoad = loadVoiceLog(logKey);
+}
+
+let logLoad: Promise<void> = Promise.resolve();
+/** resolves once the current account's saved log is read */
+export const whenLogLoaded = () => logLoad;
+
+/** puts in the Log merged from another device (Settings → sync); entries keep their order, newest first */
+export function replaceLogFromSync(list: LogEntry[]) {
+    const known = new Set(entries.map(entry => `${entry.time}:${entry.userId}:${entry.kind}`));
+    const added = list.filter(entry => !known.has(`${entry.time}:${entry.userId}:${entry.kind}`));
+    if (!added.length) return;
+    entries = [...entries, ...added.map(entry => ({ ...entry, key: nextKey++ }))].sort((a, b) => b.time - a.time).slice(0, MAX_ENTRIES);
+    emit();
+    save();
 }
 
 async function loadVoiceLog(key: string) {

@@ -40,6 +40,11 @@ export function installUserMenu(api, view) {
                     listItem(view, id, "notifyVoice", "Notify when in voice", "Stop voice alerts"),
                     listItem(view, id, "blacklist", "Add to Run Away", "Remove from Run Away"),
                     listItem(view, id, "hidden", "Hide from In Voice", "Show in In Voice"),
+                    { id: "fivbd-refresh-name", label: "Refresh name", action: async () => {
+                        const ok = await view.bridge.refreshName(id);
+                        api.UI.showToast(ok ? "Name updated." : "Couldn't get the name from Discord.", { type: ok ? "success" : "error" });
+                        view.refresh();
+                    } },
                     { type: "submenu", id: "fivbd-guards", label: "Personal Guards", items: guardItems }
                 ]
             }]);

@@ -4,8 +4,10 @@ import { DataStore } from "./data.js";
 import { DiscordBridge } from "./discord.js";
 import { GuardService } from "./guards.js";
 import { installUserMenu } from "./menu.js";
+import { NameCache } from "./names.js";
 import { ReplyService } from "./replies.js";
 import { settingsPanel } from "./settingsUi.js";
+import { SyncService } from "./sync.js";
 import { Dashboard } from "./view.js";
 import { VoiceLog } from "./voiceLog.js";
 import { WhatsNew } from "./whatsNew.js";
@@ -22,6 +24,8 @@ module.exports = class FriendsInVoice {
         try {
             this.data = new DataStore(this.api);
             this.bridge = new DiscordBridge(this.api);
+            this.bridge.names = new NameCache();
+            void this.bridge.names.load().then(() => this.view?.refresh());
             this.view = new Dashboard(this.api, this.bridge, this.data, this.version);
             this.guards = new GuardService(this.api, this.bridge, this.data, tab => this.view.open(tab));
             this.guards.changed = () => this.view.refresh();
@@ -30,16 +34,20 @@ module.exports = class FriendsInVoice {
             this.voiceLog = new VoiceLog(this.bridge, this.data, this.api);
             this.whatsNew = new WhatsNew(this.api, this.data, this.version);
             this.autoStatus = new AutoStatus(this.api, this.bridge, this.data);
-            this.voiceLog.onChange = () => { if (this.view.tab === "log") this.view.refresh(); };
-            Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus });
+            this.sync = new SyncService(this.api, this.bridge, this.data, this.voiceLog);
+            this.bridge.names.onChange = () => this.sync.schedule();
+            this.voiceLog.onChange = () => { if (this.view.tab === "log") this.view.refresh(); this.sync.schedule(); };
+            Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus, sync: this.sync });
             this.view.start();
             this.unsubscribers.push(installUserMenu(this.api, this.view));
             // each Discord account has its own lists and log; Discord connects again after switching accounts
             const loadAccount = async () => {
                 const id = this.bridge.currentId();
                 await this.data.useAccount(id);
-                void this.voiceLog.useAccount(id);
+                await this.voiceLog.useAccount(id);
                 if (this.started) void this.guards.start();
+                // the other devices' copy, a moment after this account's own data is loaded
+                this.syncTimer = setTimeout(() => void this.sync.run(), 5000);
             };
             this.data.onAccount = () => this.view.refresh();
             const showWhatsNew = () => { this.whatsNewTimer = setTimeout(() => void this.whatsNew.check(), 3000); };
@@ -71,6 +79,7 @@ module.exports = class FriendsInVoice {
             this.voiceLog.seed();
             this.alerts.seed();
             this.autoStatus.apply();
+            this.sync.start();
             this.pollTimer = setInterval(() => { this.alerts.poll(); this.view.refresh(); }, 5000);
             this.updateTimer = setInterval(() => void this.alerts.checkUpdate(), 6 * 60 * 60 * 1000);
             this.started = true;
@@ -91,6 +100,9 @@ module.exports = class FriendsInVoice {
             try { unsubscribe?.(); } catch (error) { this.api.Logger.error("Cleanup failed", error); }
         }
         this.autoStatus?.cancel();
+        clearTimeout(this.syncTimer);
+        this.sync?.stop();
+        void this.bridge?.names?.flush();
         this.guards?.stop();
         this.voiceLog?.stop();
         this.view?.stop();

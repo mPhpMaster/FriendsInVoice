@@ -10,7 +10,7 @@ export const STATUSES = ["online", "idle", "dnd", "invisible"];
 const DEFAULTS = {
     watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [], hidden: [],
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
-    anthropicApiKey: "", aiModel: "claude-opus-5-5", guardServer: "https://friendsinvoice.sarhsoft.com", checkForUpdates: true, showWhatsNew: true,
+    anthropicApiKey: "", syncPassphrase: "", aiModel: "claude-opus-5-5", guardServer: "https://friendsinvoice.sarhsoft.com", checkForUpdates: true, showWhatsNew: true,
     autoStatus: false, autoAllowGuardCommands: false, alwaysHideButton: true, statusInCall: "online", statusOutsideCall: "invisible",
     personalGuards: [], knownGuardGrants: [], pendingGuardInvites: [], declinedGuardInvites: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
 };
@@ -23,7 +23,7 @@ export function normalizeData(raw) {
     for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
     for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands", "alwaysHideButton"])
         if (typeof source[key] === "boolean") data[key] = source[key];
-    for (const key of ["anthropicApiKey", "aiModel"])
+    for (const key of ["anthropicApiKey", "aiModel", "syncPassphrase"])
         if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
     if (typeof source.guardServer === "string" && /^https:\/\/[^/\s]+\/?$/i.test(source.guardServer.trim())) data.guardServer = source.guardServer.trim();
     for (const key of ["statusInCall", "statusOutsideCall"])
@@ -92,6 +92,7 @@ export class DataStore {
         if (!LISTS.includes(key) || !isId(id)) return false;
         this.value[key] = this.listHas(key, id) ? this.value[key].filter(item => item !== id) : [...this.value[key], id];
         this.save();
+        this.onListChange?.(key);
         return true;
     }
     set(key, value) {
@@ -99,6 +100,7 @@ export class DataStore {
         const candidate = normalizeData({ ...this.value, [key]: value });
         this.value[key] = candidate[key];
         this.save();
+        if (LISTS.includes(key)) this.onListChange?.(key);
         return true;
     }
     grant(id, actions) {
