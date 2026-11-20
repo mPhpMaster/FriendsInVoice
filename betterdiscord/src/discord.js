@@ -99,17 +99,6 @@ export class DiscordBridge {
         this.componentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { rawText: text, plainText: text });
         } finally { this.preparingGuardDm = false; }
     }
-    async guardHistory(channelId, before) {
-        if (!this.rest?.get) throw new Error("Discord's message history is unavailable.");
-        const response = await this.rest.get({ url: `/channels/${channelId}/messages`, query: { limit: 100, ...(before ? { before } : {}) } });
-        if (!Array.isArray(response.body)) throw new Error("Discord did not return the invitation history.");
-        return response.body;
-    }
-    async guardReaction(channelId, messageId, emoji, add) {
-        const method = add ? "put" : "del";
-        if (!this.rest?.[method]) throw new Error("Discord's reaction control is unavailable.");
-        await this.rest[method]({ url: `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me` });
-    }
     insertReply(text) {
         if (!this.componentDispatch?.dispatchToLastSubscribed) throw new Error("Discord's message composer is unavailable.");
         this.componentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { rawText: text, plainText: text });

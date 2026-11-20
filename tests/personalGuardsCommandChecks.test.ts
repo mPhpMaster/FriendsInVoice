@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { applyGuardAccountSource } from "../friendsInVoice/personalGuardsAccount";
+import { applyServerPairs } from "../friendsInVoice/guardServer";
 import { guardCommandRejection, GUARD_COMMAND_COOLDOWN, reserveGuardCommand } from "../friendsInVoice/personalGuardsCommandChecks";
 import type { GuardCommandContext } from "../friendsInVoice/personalGuardsCommandTypes";
 import { openGuardPayload, publicKeyString, sealGuardPayload } from "../friendsInVoice/personalGuardsCrypto";
@@ -22,8 +22,8 @@ test("restored acceptance supports all three encrypted actions from different gu
     for (const device of ["computer one", "computer two", "browser"]) {
         const guardian = await pair(); // independent installation, no old guardian private key
         const restored = store(newGuardNonce());
-        applyGuardAccountSource(restored, { decision: "accept", invite: { userId: ownerId, nonce, publicKey: ownerKey,
-            actions: [...GUARD_ACTIONS], messageId: "567890123456789012", channelId: "456789012345678901" } });
+        applyServerPairs(restored, { me: guardianId, codes: [], pairs: [{ id: "pair1", role: "guardian", peerId: ownerId, peerKey: ownerKey,
+            actions: [...GUARD_ACTIONS], nonce, createdAt: Date.now() }] });
         for (const action of restored.knownGuardGrants[0].actions) {
             const command = makeCommand(ownerId, action, restored.knownGuardGrants[0].inviteNonce);
             const wire = await sealGuardPayload(command, guardian, restored.guardPeerKeys[0].publicKey, guardianId, ownerId);

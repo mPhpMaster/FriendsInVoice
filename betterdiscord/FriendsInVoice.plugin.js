@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.18.6
+ * @version 1.19.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -160,8 +160,8 @@ function normalizeGuardGrant(item, actions) {
     userId: item.userId,
     actions: actions.filter((action) => item.actions.includes(action)),
     ...isNonce(item.inviteNonce) ? { inviteNonce: item.inviteNonce } : {},
-    ...isUserId(item.inviteMessageId) ? { inviteMessageId: item.inviteMessageId } : {},
-    ...isUserId(item.inviteChannelId) ? { inviteChannelId: item.inviteChannelId } : {}
+    ...typeof item.pairId === "string" && /^[a-f\d]{24}$/.test(item.pairId) ? { pairId: item.pairId } : {},
+    ...typeof item.code === "string" && /^[A-HJ-NP-Z2-9]{8}$/.test(item.code) && Number.isSafeInteger(item.codeExpiresAt) ? { code: item.code, codeExpiresAt: item.codeExpiresAt } : {}
   };
 }
 function normalizeGuardInvites(raw) {
@@ -194,6 +194,7 @@ var DEFAULTS = {
   smartRepliesAi: false,
   anthropicApiKey: "",
   aiModel: "claude-opus-5-5",
+  guardServer: "https://friendsinvoice.sarhsoft.com",
   checkForUpdates: true,
   showWhatsNew: true,
   autoStatus: false,
@@ -217,6 +218,7 @@ function normalizeData(raw) {
     if (typeof source[key] === "boolean") data[key] = source[key];
   for (const key of ["anthropicApiKey", "aiModel"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
+  if (typeof source.guardServer === "string" && /^https:\/\/[^/\s]+\/?$/i.test(source.guardServer.trim())) data.guardServer = source.guardServer.trim();
   for (const key of ["statusInCall", "statusOutsideCall"])
     if (STATUSES.includes(source[key])) data[key] = source[key];
   for (const key of ["personalGuards", "knownGuardGrants"])
@@ -289,13 +291,10 @@ var DataStore = class {
   }
   grant(id, actions) {
     if (!isId(id) || !Array.isArray(actions) || !actions.every(isAction)) return false;
+    const current = this.value.personalGuards.find((item) => item.userId === id);
     this.value.personalGuards = [
       ...this.value.personalGuards.filter((item) => item.userId !== id),
-      {
-        userId: id,
-        actions: ACTIONS.filter((action) => actions.includes(action)),
-        ...this.value.personalGuards.find((item) => item.userId === id)?.inviteNonce ? { inviteNonce: this.value.personalGuards.find((item) => item.userId === id).inviteNonce } : {}
-      }
+      { ...current, userId: id, actions: ACTIONS.filter((action) => actions.includes(action)) }
     ];
     this.save();
     return true;
@@ -425,17 +424,6 @@ var DiscordBridge = class {
       this.preparingGuardDm = false;
     }
   }
-  async guardHistory(channelId, before) {
-    if (!this.rest?.get) throw new Error("Discord's message history is unavailable.");
-    const response = await this.rest.get({ url: `/channels/${channelId}/messages`, query: { limit: 100, ...before ? { before } : {} } });
-    if (!Array.isArray(response.body)) throw new Error("Discord did not return the invitation history.");
-    return response.body;
-  }
-  async guardReaction(channelId, messageId, emoji, add2) {
-    const method = add2 ? "put" : "del";
-    if (!this.rest?.[method]) throw new Error("Discord's reaction control is unavailable.");
-    await this.rest[method]({ url: `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me` });
-  }
   insertReply(text) {
     if (!this.componentDispatch?.dispatchToLastSubscribed) throw new Error("Discord's message composer is unavailable.");
     this.componentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { rawText: text, plainText: text });
@@ -537,6 +525,199 @@ var DiscordBridge = class {
   }
 };
 
+// ../friendsInVoice/personalGuardsSettings.ts
+function writeGuardSetting(store, key, value) {
+  const plain = JSON.parse(JSON.stringify(value));
+  store[key] = plain;
+}
+
+// ../friendsInVoice/guardServer.ts
+var DEFAULT_GUARD_SERVER = "https://friendsinvoice.sarhsoft.com";
+var POLL_WAIT = 25e3;
+var GuardServerError = class extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+};
+function formatCode(code) {
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+function normalizeCode(value) {
+  const code = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(code) ? code : null;
+}
+function codeMessage(code) {
+  return `\u{1F6E1}\uFE0F Friends in Voice guard code: ${formatCode(code)}`;
+}
+function serverUrl(value) {
+  const url = (value || DEFAULT_GUARD_SERVER).trim().replace(/\/+$/, "");
+  if (!/^https:\/\/[^/\s]+$/i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url))
+    throw new GuardServerError(0, "The Personal Guards server address must start with https://.");
+  return url;
+}
+var GuardServerClient = class {
+  constructor(options) {
+    this.options = options;
+  }
+  registering = /* @__PURE__ */ new Map();
+  async credential(account, fresh = false) {
+    const server = serverUrl(this.options.server());
+    const publicKey = await this.options.publicKey();
+    const saved = fresh ? void 0 : await this.options.credentials.get(account);
+    if (saved && saved.server === server && saved.publicKey === publicKey) return saved;
+    const key = `${account}|${server}|${publicKey}`;
+    let work = this.registering.get(key);
+    if (!work) {
+      work = (async () => {
+        const response = await this.options.transport({ method: "POST", url: `${server}/v1/register`, body: { discordId: account, publicKey }, timeoutMs: 15e3 });
+        if (response.status !== 200 || typeof response.body?.token !== "string") throw this.failure(response);
+        const credential = { server, token: response.body.token, publicKey };
+        await this.options.credentials.set(account, credential);
+        return credential;
+      })().finally(() => this.registering.delete(key));
+      this.registering.set(key, work);
+    }
+    return work;
+  }
+  failure(response) {
+    if (response.status === 0) return new GuardServerError(0, "Can't reach the Personal Guards server. Check your internet connection.");
+    if (response.status === 429) return new GuardServerError(429, "The Personal Guards server asked to slow down. Try again in a minute.");
+    return new GuardServerError(response.status, String(response.body?.error ?? `Personal Guards server error (${response.status}).`));
+  }
+  async call(method, path, body, timeoutMs = 15e3) {
+    const account = this.options.account();
+    if (!account) throw new GuardServerError(0, "Discord is still loading your account. Try again in a moment.");
+    let credential = await this.credential(account);
+    let response = await this.options.transport({ method, url: credential.server + path, token: credential.token, body, timeoutMs });
+    if (response.status === 401) {
+      credential = await this.credential(account, true);
+      response = await this.options.transport({ method, url: credential.server + path, token: credential.token, body, timeoutMs });
+    }
+    if (this.options.account() !== account) throw new GuardServerError(0, "Discord accounts changed. Try again.");
+    if (response.status !== 200) throw this.failure(response);
+    return response.body;
+  }
+  listPairs() {
+    return this.call("GET", "/v1/pairs");
+  }
+  createCode(guardianId, actions, nonce) {
+    return this.call("POST", "/v1/codes", { guardianId, actions, nonce });
+  }
+  showCode(code) {
+    return this.call("GET", `/v1/codes/${code}`);
+  }
+  acceptCode(code) {
+    return this.call("POST", `/v1/codes/${code}/accept`);
+  }
+  refuseCode(code) {
+    return this.call("POST", `/v1/codes/${code}/refuse`);
+  }
+  cancelCode(code) {
+    return this.call("DELETE", `/v1/codes/${code}`);
+  }
+  updatePair(pairId, actions) {
+    return this.call("PATCH", `/v1/pairs/${pairId}`, { actions });
+  }
+  deletePair(pairId) {
+    return this.call("DELETE", `/v1/pairs/${pairId}`);
+  }
+  sendCommand(pairId, wire) {
+    return this.call("POST", `/v1/pairs/${pairId}/commands`, { wire });
+  }
+  events(after, wait) {
+    return this.call("GET", `/v1/events?after=${after}&wait=${wait}`, void 0, wait + 15e3);
+  }
+};
+function applyServerPairs(store, state, now = Date.now()) {
+  const owned = state.pairs.filter((pair) => pair.role === "owner");
+  const guarding = state.pairs.filter((pair) => pair.role === "guardian");
+  const codes = state.codes.filter((code) => code.expiresAt > now);
+  const ids = /* @__PURE__ */ new Set([...store.personalGuards.map((grant) => grant.userId), ...owned.map((pair) => pair.peerId), ...codes.map((code) => code.guardianId)]);
+  const personal = [];
+  for (const userId of ids) {
+    const local = store.personalGuards.find((grant) => grant.userId === userId);
+    const pair = owned.find((item) => item.peerId === userId);
+    const code = codes.find((item) => item.guardianId === userId);
+    personal.push({
+      userId,
+      actions: [...pair?.actions ?? code?.actions ?? local?.actions ?? []],
+      ...pair ? { pairId: pair.id, inviteNonce: pair.nonce } : {},
+      ...code ? { code: code.code, codeExpiresAt: code.expiresAt } : {}
+    });
+  }
+  writeGuardSetting(store, "personalGuards", personal);
+  writeGuardSetting(store, "knownGuardGrants", guarding.map((pair) => ({ userId: pair.peerId, actions: [...pair.actions], inviteNonce: pair.nonce, pairId: pair.id })));
+  const keyed = new Map(state.pairs.map((pair) => [pair.peerId, pair.peerKey]));
+  writeGuardSetting(store, "guardPeerKeys", [
+    ...store.guardPeerKeys.filter((peer) => !keyed.has(peer.userId)).map((peer) => ({ userId: peer.userId, publicKey: peer.publicKey })),
+    ...[...keyed].map(([userId, publicKey]) => ({ userId, publicKey }))
+  ]);
+  if (store.pendingGuardInvites.length) writeGuardSetting(store, "pendingGuardInvites", []);
+}
+function ownerNeedsEvents(store, inVoice, now = Date.now()) {
+  return store.personalGuards.some((grant) => grant.code && (grant.codeExpiresAt ?? 0) > now) || inVoice && store.personalGuards.some((grant) => grant.pairId);
+}
+var GuardPoller = class {
+  constructor(options) {
+    this.options = options;
+  }
+  running = false;
+  generation = 0;
+  after = 0;
+  wake;
+  /** Call when something shouldRun() depends on changed */
+  update() {
+    if (this.options.shouldRun()) {
+      if (!this.running) void this.loop();
+    } else if (this.running) {
+      this.generation++;
+      this.running = false;
+      this.wake?.();
+    }
+  }
+  /** Account switch or plugin stop */
+  reset() {
+    this.generation++;
+    this.running = false;
+    this.after = 0;
+    this.wake?.();
+  }
+  sleep(ms) {
+    if (this.options.wait) return this.options.wait(ms);
+    return new Promise((resolve) => {
+      const timer = setTimeout(done, ms);
+      function done() {
+        clearTimeout(timer);
+        resolve();
+      }
+      this.wake = done;
+    });
+  }
+  async loop() {
+    const generation = ++this.generation;
+    this.running = true;
+    let failures = 0;
+    while (generation === this.generation && this.options.shouldRun()) {
+      try {
+        const started = Date.now();
+        const result = await this.options.client.events(this.after, POLL_WAIT);
+        if (generation !== this.generation) break;
+        this.after = result.last;
+        failures = 0;
+        if (result.events.length) await this.options.onEvents(result.events);
+        else if (Date.now() - started < 1e3) await this.sleep(5e3);
+      } catch (error) {
+        if (generation !== this.generation) break;
+        failures++;
+        const status = error instanceof GuardServerError ? error.status : 0;
+        await this.sleep(status === 429 ? 6e4 : Math.min(5 * 6e4, 2e3 * 2 ** Math.min(failures - 1, 8)));
+      }
+    }
+    if (generation === this.generation) this.running = false;
+  }
+};
+
 // ../friendsInVoice/personalGuardsProtocol.ts
 var GUARD_ACTIONS = ["mute", "deafen", "disconnect"];
 var GUARD_LABELS = {
@@ -544,11 +725,7 @@ var GUARD_LABELS = {
   deafen: "Deafen",
   disconnect: "Disconnect from voice"
 };
-var PREFIX = "[FriendsInVoice Guard v2] ";
-var LINK = "https://github.com/mPhpMaster/FriendsInVoice#fiv-guard=";
-var LINKED = /#fiv-guard=([A-Za-z0-9_\-\s]+)>?\)/;
 var SNOWFLAKE = /^\d{17,20}$/;
-var BASE64_URL = /^[A-Za-z0-9_-]+$/;
 function isUserId2(value) {
   return SNOWFLAKE.test(value);
 }
@@ -562,58 +739,6 @@ function newGuardNonce() {
 function makeCommand(ownerId, action, inviteNonce) {
   return { kind: "command", ownerId, action, createdAt: Date.now(), nonce: newGuardNonce(), ...inviteNonce ? { inviteNonce } : {} };
 }
-function makeGrantNotice(ownerId, actions) {
-  return { kind: "grant", ownerId, actions: GUARD_ACTIONS.filter((action) => actions.includes(action)), createdAt: Date.now() };
-}
-function toBase64Url(text) {
-  let binary = "";
-  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-function fromBase64Url(value) {
-  try {
-    const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
-    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
-  } catch {
-    return null;
-  }
-}
-function serializeWire(wire, summary = "Personal Guards message") {
-  return `\u{1F6E1}\uFE0F [${summary}](<${LINK}${toBase64Url(JSON.stringify(wire))}>)`;
-}
-function inviteSummary(actions) {
-  return `Personal Guard invite: ${GUARD_ACTIONS.filter((action) => actions.includes(action)).map((action) => GUARD_LABELS[action].toLowerCase()).join(", ")}`;
-}
-function guardJson(content) {
-  if (content.length > 3e3) return null;
-  const envelopes = content.split(PREFIX).length - 1 + content.split("#fiv-guard=").length - 1;
-  if (envelopes !== 1) return null;
-  if (content.startsWith(PREFIX)) return content.slice(PREFIX.length);
-  const data = LINKED.exec(content)?.[1]?.replace(/\s/g, "");
-  return data ? fromBase64Url(data) : null;
-}
-function parseGuardMessage(content) {
-  const json = guardJson(content);
-  if (!json) return null;
-  let data;
-  try {
-    data = JSON.parse(json);
-  } catch {
-    return null;
-  }
-  if (!data || typeof data !== "object") return null;
-  const value = data;
-  for (const field of ["publicKey", "fromKey", "iv", "ciphertext"]) {
-    if (typeof value[field] === "string") value[field] = value[field].replace(/[ \t\r\n]/g, "");
-  }
-  if (value.version !== 2 && value.version !== 3) return null;
-  if (value.type === "key" && value.version === 2 && typeof value.publicKey === "string" && value.publicKey.length === 87 && BASE64_URL.test(value.publicKey)) return value;
-  if (value.type === "invite" && value.version === 3 && typeof value.publicKey === "string" && value.publicKey.length === 87 && BASE64_URL.test(value.publicKey) && typeof value.nonce === "string" && /^[a-f\d-]{36}$/i.test(value.nonce) && Array.isArray(value.actions) && value.actions.length > 0 && value.actions.every((action) => GUARD_ACTIONS.includes(action))) return value;
-  if (value.type === "sealed" && value.version === 2 && typeof value.to === "string" && isUserId2(value.to) && typeof value.fromKey === "string" && value.fromKey.length === 87 && BASE64_URL.test(value.fromKey) && typeof value.iv === "string" && value.iv.length === 16 && BASE64_URL.test(value.iv) && typeof value.ciphertext === "string" && value.ciphertext.length > 20 && BASE64_URL.test(value.ciphertext)) {
-    return value;
-  }
-  return null;
-}
 function parseGuardPayload(value) {
   if (!value || typeof value !== "object") return null;
   const payload = value;
@@ -622,15 +747,6 @@ function parseGuardPayload(value) {
     return payload;
   if (payload.kind === "grant" && Array.isArray(payload.actions) && payload.actions.every((action) => GUARD_ACTIONS.includes(action))) return payload;
   return null;
-}
-
-// ../friendsInVoice/personalGuardsSettings.ts
-function writeGuardSetting(store, key, value) {
-  const plain = JSON.parse(JSON.stringify(value));
-  store[key] = plain;
-}
-function saveGuardInvitation(store, guardianId, nonce) {
-  writeGuardSetting(store, "personalGuards", store.personalGuards.map((grant) => grant.userId === guardianId ? { ...grant, inviteNonce: nonce } : grant));
 }
 
 // ../friendsInVoice/personalGuardsCommandChecks.ts
@@ -661,12 +777,12 @@ var encoder = new TextEncoder();
 var decoder = new TextDecoder();
 var DB_NAME2 = "FriendsInVoiceGuardKeys";
 var keyPromise;
-function toBase64Url2(bytes) {
+function toBase64Url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function fromBase64Url2(value) {
+function fromBase64Url(value) {
   const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
@@ -711,11 +827,11 @@ function getGuardKeys() {
   });
 }
 async function publicKeyString(pair) {
-  return toBase64Url2(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
+  return toBase64Url(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
 }
 async function validatePublicKey(value) {
   try {
-    const bytes = fromBase64Url2(value);
+    const bytes = fromBase64Url(value);
     if (bytes.length !== 65 || bytes[0] !== 4) return false;
     await crypto.subtle.importKey("raw", buffer(bytes), { name: "ECDH", namedCurve: "P-256" }, false, []);
     return true;
@@ -724,7 +840,7 @@ async function validatePublicKey(value) {
   }
 }
 async function sharedKey(pair, peerPublic, firstId, secondId) {
-  const peer = await crypto.subtle.importKey("raw", buffer(fromBase64Url2(peerPublic)), { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const peer = await crypto.subtle.importKey("raw", buffer(fromBase64Url(peerPublic)), { name: "ECDH", namedCurve: "P-256" }, false, []);
   const secret = await crypto.subtle.deriveBits({ name: "ECDH", public: peer }, pair.privateKey, 256);
   const hkdf = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]);
   const info = encoder.encode([firstId, secondId].sort().join("|"));
@@ -748,16 +864,16 @@ async function sealGuardPayload(payload, pair, peerPublic, senderId, recipientId
     key,
     buffer(encoder.encode(JSON.stringify(payload)))
   );
-  return { type: "sealed", version: 2, to: recipientId, fromKey, iv: toBase64Url2(iv), ciphertext: toBase64Url2(new Uint8Array(ciphertext)) };
+  return { type: "sealed", version: 2, to: recipientId, fromKey, iv: toBase64Url(iv), ciphertext: toBase64Url(new Uint8Array(ciphertext)) };
 }
 async function openGuardPayload(wire, pair, senderId, recipientId) {
   if (wire.to !== recipientId) return null;
   try {
     const key = await sharedKey(pair, wire.fromKey, senderId, recipientId);
     const plaintext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: buffer(fromBase64Url2(wire.iv)), additionalData: buffer(additionalData(senderId, recipientId, wire.fromKey)) },
+      { name: "AES-GCM", iv: buffer(fromBase64Url(wire.iv)), additionalData: buffer(additionalData(senderId, recipientId, wire.fromKey)) },
       key,
-      buffer(fromBase64Url2(wire.ciphertext))
+      buffer(fromBase64Url(wire.ciphertext))
     );
     return parseGuardPayload(JSON.parse(decoder.decode(plaintext)));
   } catch {
@@ -765,164 +881,52 @@ async function openGuardPayload(wire, pair, senderId, recipientId) {
   }
 }
 
-// ../friendsInVoice/personalGuardsAccount.ts
-var GUARD_ACCEPT = "\u2705";
-var GUARD_REFUSE = "\u274C";
-function accountInvite(message, ownerId, channelId) {
-  if (!isUserId2(message.id) || message.channel_id !== channelId || message.author?.id !== ownerId || message.author.bot || message.type !== void 0 && message.type !== 0 && message.type !== 19) return null;
-  const wire = parseGuardMessage(message.content ?? "");
-  if (wire?.type !== "invite") return null;
-  const mine = (emoji) => message.reactions?.some((reaction) => !reaction.emoji.id && reaction.emoji.name === emoji && reaction.me === true);
-  const decision = mine(GUARD_REFUSE) ? "refuse" : mine(GUARD_ACCEPT) ? "accept" : "none";
-  return { invite: { userId: ownerId, publicKey: wire.publicKey, actions: [...wire.actions], nonce: wire.nonce, messageId: message.id, channelId }, decision };
-}
-function applyGuardAccountSource(store, source) {
-  const { invite, decision } = source;
-  const owners = store.knownGuardGrants.filter((grant) => grant.userId !== invite.userId);
-  writeGuardSetting(store, "knownGuardGrants", decision === "accept" ? [...owners, {
-    userId: invite.userId,
-    actions: [...invite.actions],
-    inviteNonce: invite.nonce,
-    inviteMessageId: invite.messageId,
-    inviteChannelId: invite.channelId
-  }] : owners);
-  if (decision === "accept") writeGuardSetting(store, "guardPeerKeys", [
-    ...store.guardPeerKeys.filter((item) => item.userId !== invite.userId),
-    { userId: invite.userId, publicKey: invite.publicKey }
-  ]);
-  writeGuardSetting(store, "pendingGuardInvites", [
-    ...store.pendingGuardInvites.filter((item) => item.userId !== invite.userId),
-    ...decision === "none" ? [invite] : []
-  ]);
-  writeGuardSetting(store, "declinedGuardInvites", decision === "refuse" ? [...store.declinedGuardInvites.filter((item) => item !== invite.nonce), invite.nonce].slice(-50) : store.declinedGuardInvites.filter((item) => item !== invite.nonce));
-}
-var GUARD_HISTORY_PAGES = 10;
-var GUARD_PASSIVE_PAGES = 1;
-var GUARD_STARTUP_DMS = 5;
-async function findGuardAccountSource(bridge, ownerId, channelId, pages = GUARD_HISTORY_PAGES) {
-  const account = bridge.currentAccount();
-  if (!account || !isUserId2(ownerId) || ownerId === account || !bridge.isDM(channelId, ownerId)) return null;
-  let before;
-  for (let page = 0; page < Math.min(pages, GUARD_HISTORY_PAGES); page++) {
-    const messages = await bridge.fetchPage(channelId, before);
-    if (bridge.currentAccount() !== account) return null;
-    const ordered = messages.filter((message) => isUserId2(message.id)).sort((a, b) => BigInt(a.id) > BigInt(b.id) ? -1 : 1);
-    for (const message of ordered) {
-      const source = accountInvite(message, ownerId, channelId);
-      if (source && await validatePublicKey(source.invite.publicKey)) return bridge.currentAccount() === account ? source : null;
-    }
-    const last = ordered.at(-1)?.id;
-    if (messages.length < 100 || !last || last === before) break;
-    before = last;
-  }
-  return null;
-}
-async function saveGuardAccountDecision(bridge, store, invite, decision) {
-  const account = bridge.currentAccount();
-  if (!account || account === invite.userId || !invite.channelId || !invite.messageId || !bridge.isDM(invite.channelId, invite.userId))
-    throw new Error("Open the invitation in your DM to accept or refuse it.");
-  const source = await findGuardAccountSource(bridge, invite.userId, invite.channelId);
-  if (!source || source.invite.messageId !== invite.messageId || source.invite.nonce !== invite.nonce || bridge.currentAccount() !== account)
-    throw new Error("This invitation is no longer current. Open the newest invitation in your DM.");
-  await bridge.reaction(invite.channelId, invite.messageId, decision === "accept" ? GUARD_REFUSE : GUARD_ACCEPT, false);
-  if (bridge.currentAccount() !== account) throw new Error("Discord accounts changed. Try again in the correct account.");
-  await bridge.reaction(invite.channelId, invite.messageId, decision === "accept" ? GUARD_ACCEPT : GUARD_REFUSE, true);
-  if (bridge.currentAccount() !== account) throw new Error("Discord accounts changed. Reload access for the current account.");
-  applyGuardAccountSource(store, { invite: source.invite, decision });
-}
-
-// src/guardAccount.js
-var GuardAccountAccess = class {
-  constructor(bridge, data, changed) {
-    this.discord = bridge;
-    this.data = data;
-    this.changed = changed;
-    this.active = true;
-    this.pending = /* @__PURE__ */ new Map();
-    this.bridge = {
-      currentAccount: () => this.active && !data.loading && data.accountId === bridge.currentId() ? bridge.currentId() : void 0,
-      isDM: (channelId, ownerId) => {
-        const channel = bridge.channel(channelId);
-        return bridge.isDm(channel) && channel.recipients?.length === 1 && channel.recipients[0] === ownerId;
-      },
-      fetchPage: (channel, before) => bridge.guardHistory(channel, before),
-      reaction: (channel, message, emoji, add2) => bridge.guardReaction(channel, message, emoji, add2)
-    };
-  }
-  stop() {
-    this.active = false;
-    this.pending.clear();
-  }
-  async sync(ownerId, pages = GUARD_HISTORY_PAGES) {
-    const account = this.bridge.currentAccount();
-    const channelId = this.discord.channelStore?.getDMFromUserId?.(ownerId);
-    if (!account || !channelId) return false;
-    const key = `${account}:${channelId}`;
-    if (this.pending.has(key)) return this.pending.get(key);
-    const work = (async () => {
-      try {
-        const source = await findGuardAccountSource(this.bridge, ownerId, channelId, pages);
-        if (!source || this.bridge.currentAccount() !== account) return false;
-        const current = [
-          this.data.value.knownGuardGrants.find((item) => item.userId === ownerId)?.inviteMessageId,
-          this.data.value.pendingGuardInvites.find((item) => item.userId === ownerId)?.messageId
-        ];
-        if (current.some((id) => id && BigInt(id) > BigInt(source.invite.messageId))) return false;
-        applyGuardAccountSource(this.data.value, source);
-        this.data.save();
-        this.changed();
-        return source.decision === "accept";
-      } catch {
-        return false;
-      } finally {
-        this.pending.delete(key);
-      }
-    })();
-    this.pending.set(key, work);
-    return work;
-  }
-  async decide(invite, accept) {
-    await saveGuardAccountDecision(this.bridge, this.data.value, invite, accept ? "accept" : "refuse");
-    this.data.save();
-    this.changed();
-  }
-  async remove(ownerId) {
-    const channelId = this.discord.channelStore?.getDMFromUserId?.(ownerId);
-    if (!channelId) throw new Error("Open the invitation DM first.");
-    const source = await findGuardAccountSource(this.bridge, ownerId, channelId);
-    if (!source) throw new Error("The original invitation was not found. Open its DM and try again.");
-    await this.decide(source.invite, false);
-  }
-  async refresh() {
-    const account = this.bridge.currentAccount();
-    const channels = this.discord.channelStore?.getSortedPrivateChannels?.() ?? [];
-    for (const channel of channels.filter((item) => this.discord.isDm(item)).slice(0, GUARD_STARTUP_DMS)) {
-      if (!account || account !== this.bridge.currentAccount()) return;
-      if (channel.recipients?.[0]) await this.sync(channel.recipients[0], GUARD_PASSIVE_PAGES);
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    this.onChannel(this.discord.selectedChannel());
-  }
-  onChannel(channelId) {
-    const channel = this.discord.channel(channelId);
-    if (this.discord.isDm(channel) && channel.recipients?.[0]) void this.sync(channel.recipients[0], GUARD_PASSIVE_PAGES);
-  }
-  onReaction(event) {
-    if (event.userId === this.bridge.currentAccount()) this.onChannel(event.channelId);
-  }
-};
-
 // src/guards.js
-var MAX_GRANT_AGE = 7 * 24 * 60 * 6e4;
+function netTransport(api) {
+  return async ({ method, url, token, body, timeoutMs }) => {
+    try {
+      const response = await api.Net.fetch(url, {
+        method,
+        timeout: timeoutMs,
+        headers: { "content-type": "application/json", ...token ? { authorization: `Bearer ${token}` } : {} },
+        ...body === void 0 ? {} : { body: JSON.stringify(body) }
+      });
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+      return { status: response.status, body: data };
+    } catch (error) {
+      return { status: 0, body: { error: String(error?.message ?? error) } };
+    }
+  };
+}
 var GuardService = class {
-  constructor(api, bridge, data, openPage) {
-    Object.assign(this, { api, bridge, data, openPage, active: true, seen: /* @__PURE__ */ new Set() });
-    this.account = new GuardAccountAccess(bridge, data, () => this.changed?.());
+  constructor(api, bridge, data, openPage, options = {}) {
+    Object.assign(this, { api, bridge, data, openPage, active: true, seen: /* @__PURE__ */ new Set(), refreshing: null });
+    const meta = options.meta ?? accountStore("meta");
+    this.client = new GuardServerClient({
+      transport: options.transport ?? netTransport(api),
+      credentials: {
+        get: async (id) => await meta.get(`guardServer_${id}`) ?? void 0,
+        set: (id, value) => meta.put(`guardServer_${id}`, value ?? null)
+      },
+      server: () => data.value.guardServer || DEFAULT_GUARD_SERVER,
+      account: () => this.current() ?? void 0,
+      publicKey: async () => publicKeyString(await getGuardKeys())
+    });
+    this.poller = new GuardPoller({
+      client: this.client,
+      shouldRun: () => options.poll !== false && !!this.current() && ownerNeedsEvents(this.data.value, !!this.bridge.myVoiceChannel()),
+      onEvents: (events) => this.onEvents(events)
+    });
   }
   stop() {
     this.active = false;
     this.seen.clear();
-    this.account.stop();
+    this.poller.reset();
   }
   current() {
     return this.active && !this.data.loading && this.data.accountId === this.bridge.currentId() ? this.bridge.currentId() : null;
@@ -931,136 +935,181 @@ var GuardService = class {
     return this.data.value.personalGuards.find((item) => item.userId === id)?.actions ?? [];
   }
   knownFor(id) {
-    return this.data.value.knownGuardGrants.find((item) => item.userId === id)?.actions ?? [];
+    return this.data.value.knownGuardGrants.find((item) => item.userId === id && item.pairId)?.actions ?? [];
   }
   keyFor(id) {
     return this.data.value.guardPeerKeys.find((item) => item.userId === id)?.publicKey;
   }
-  setKey(id, publicKey) {
-    this.data.value.guardPeerKeys = [...this.data.value.guardPeerKeys.filter((item) => item.userId !== id), { userId: id, publicKey }];
-    this.data.save();
-  }
   error(error) {
     if (this.active) this.api.UI.showToast(error instanceof Error ? error.message : String(error), { type: "error" });
   }
-  notify(title, content, action) {
-    if (this.active) this.api.UI.showNotice(`${title}: ${content}`, action ? { buttons: [{ label: "Open Personal Guards", onClick: action }] } : {});
+  /** Voice changes only decide whether to listen for commands from the Friends in Voice server */
+  listen() {
+    this.poller.update();
+  }
+  hasData() {
+    const { value } = this.data;
+    return value.personalGuards.length > 0 || value.knownGuardGrants.length > 0 || value.pendingGuardInvites.length > 0;
+  }
+  /** At start (only if you use Personal Guards), when the tab opens, after your changes and when the server says so */
+  refresh(manual = false) {
+    if (!this.current() || !manual && !this.hasData()) {
+      this.poller.update();
+      return Promise.resolve(false);
+    }
+    this.refreshing ??= (async () => {
+      try {
+        const me = this.current();
+        const state = await this.client.listPairs();
+        if (!me || this.current() !== me || state.me !== me) return false;
+        applyServerPairs(this.data.value, state);
+        this.data.save();
+        this.changed?.();
+        return true;
+      } catch (error) {
+        if (manual) this.error(error);
+        return false;
+      } finally {
+        this.refreshing = null;
+        this.poller.update();
+      }
+    })();
+    return this.refreshing;
+  }
+  async start() {
+    this.poller.reset();
+    await this.refresh();
+  }
+  async onEvents(events) {
+    let changed = false;
+    for (const event of events) {
+      if (event.type === "command") await this.onCommand(event);
+      else changed = true;
+      if (event.type === "refused" && event.guardianId) this.api.UI.showToast(`${this.bridge.name(event.guardianId)} refused your Personal Guard invitation.`, { type: "info" });
+    }
+    if (changed) await this.refresh(true);
+  }
+  setGrant(id, actions) {
+    const current = this.data.value.personalGuards.find((item) => item.userId === id);
+    if (!this.data.grant(id, actions)) return;
+    if (current?.pairId && actions.length) void this.client.updatePair(current.pairId, actions).catch((error) => this.error(error));
   }
   async invite(id) {
-    const me = this.current();
-    if (!me || !this.grantFor(id).length) return this.error("Choose at least one allowed action first.");
+    const actions = this.grantFor(id);
+    if (!this.current() || !actions.length) return this.error("Choose at least one allowed action first.");
     try {
-      const nonce = newGuardNonce();
-      const publicKey = await publicKeyString(await getGuardKeys());
-      if (this.current() !== me) throw new Error("Discord accounts changed. Try again.");
-      const actions = [...this.grantFor(id)];
-      await this.bridge.prepareDm(id, serializeWire({ type: "invite", version: 3, publicKey, actions, nonce }, inviteSummary(actions)));
-      if (this.current() !== me) throw new Error("Discord accounts changed. Nothing was saved.");
-      saveGuardInvitation(this.data.value, id, nonce);
+      const { code, expiresAt } = await this.client.createCode(id, actions, newGuardNonce());
+      const current = this.data.value.personalGuards.find((item) => item.userId === id);
+      this.data.value.personalGuards = [...this.data.value.personalGuards.filter((item) => item.userId !== id), { ...current, userId: id, actions, code, codeExpiresAt: expiresAt }];
       this.data.save();
-      this.api.UI.showToast("Invitation ready. Press Enter to send it; they choose Accept or Refuse.", { type: "info" });
+      this.poller.update();
+      this.changed?.();
+      return { code, expiresAt };
     } catch (error) {
       this.error(error);
     }
   }
-  async decide(invite, accept) {
+  async draftCode(id, code) {
     try {
-      await this.account.decide(invite, accept);
+      await this.bridge.prepareDm(id, codeMessage(code));
+      this.api.UI.showToast("Code ready in their DM. Press Enter to send it.", { type: "info" });
     } catch (error) {
       this.error(error);
+    }
+  }
+  async lookup(raw) {
+    const code = normalizeCode(raw ?? "");
+    if (!code) {
+      this.error("A guard code has 8 letters and numbers, like ABCD-2345.");
+      return null;
+    }
+    try {
+      return { code, ...await this.client.showCode(code) };
+    } catch (error) {
+      this.error(error);
+      return null;
+    }
+  }
+  async decide(code, accept) {
+    try {
+      if (accept) {
+        const pair = await this.client.acceptCode(code);
+        if (!await validatePublicKey(pair.peerKey)) throw new Error("The owner's secure key is invalid.");
+      } else await this.client.refuseCode(code);
+      await this.refresh(true);
+      if (accept) this.api.UI.showToast("You're their Personal Guard now. In the same voice channel, right-click them to use it.", { type: "success" });
+      return true;
+    } catch (error) {
+      this.error(error);
+      return false;
     }
   }
   async removeAccess(id) {
+    const grant = this.data.value.knownGuardGrants.find((item) => item.userId === id);
+    this.data.value.knownGuardGrants = this.data.value.knownGuardGrants.filter((item) => item.userId !== id);
+    this.data.save();
+    this.changed?.();
+    if (!grant?.pairId) return;
     try {
-      await this.account.remove(id);
+      await this.client.deletePair(grant.pairId);
     } catch (error) {
       this.error(error);
     }
+    await this.refresh(true);
   }
-  // Existing key-based setups remain readable. New setup always uses an invitation.
-  async sendGrant(id) {
-    const ownerId = this.current();
-    const key = this.keyFor(id);
-    if (!ownerId || !key) return;
-    try {
-      const wire = await sealGuardPayload(makeGrantNotice(ownerId, this.grantFor(id)), await getGuardKeys(), key, ownerId, id);
-      if (this.current() !== ownerId) return;
-      await this.bridge.prepareDm(id, serializeWire(wire));
-    } catch (error) {
-      this.error(error);
-    }
+  revoke(id) {
+    const current = this.data.value.personalGuards.find((item) => item.userId === id);
+    this.data.revoke(id);
+    if (current?.pairId) void this.client.deletePair(current.pairId).catch(() => {
+    }).finally(() => void this.refresh(true));
+    if (current?.code) void this.client.cancelCode(current.code).catch(() => {
+    });
+    this.poller.update();
+    this.changed?.();
   }
   async sendCommand(id, action) {
     const senderId = this.current();
     if (!senderId || !GUARD_ACTIONS.includes(action)) return;
     try {
-      const known = this.data.value.knownGuardGrants.find((item) => item.userId === id);
-      if (known?.inviteNonce && !await this.account.sync(id)) throw new Error("Accept the newest invitation in your DM before using this action.");
-      if (this.current() !== senderId || !this.knownFor(id).includes(action) || !this.bridge.sharesVoice(id))
-        throw new Error("This action requires allowed access and the same voice channel.");
       const grant = this.data.value.knownGuardGrants.find((item) => item.userId === id);
+      if (!grant?.pairId || !grant.actions.includes(action)) throw new Error("No saved access for this action. Ask the owner for a new invite code.");
+      if (!this.bridge.sharesVoice(id)) throw new Error("Join the same voice channel first.");
       const key = this.keyFor(id);
       if (!key) throw new Error("The owner's secure key is unavailable.");
-      const wire = await sealGuardPayload(makeCommand(id, action, grant?.inviteNonce), await getGuardKeys(), key, senderId, id);
-      if (this.current() !== senderId) throw new Error("Discord accounts changed.");
-      await this.bridge.prepareDm(id, serializeWire(wire));
-      this.api.UI.showToast("One encrypted action is ready. Press Enter to send it.", { type: "info" });
+      const wire = await sealGuardPayload(makeCommand(id, action, grant.inviteNonce), await getGuardKeys(), key, senderId, id);
+      const { delivered } = await this.client.sendCommand(grant.pairId, wire);
+      this.api.UI.showToast(
+        delivered ? `Sent: ${GUARD_LABELS[action]}.` : `${this.bridge.name(id)}'s Friends in Voice isn't connected right now (they need v1.19 or newer).`,
+        { type: delivered ? "success" : "warning" }
+      );
     } catch (error) {
+      if (error instanceof GuardServerError && error.status === 404) void this.refresh(true);
       this.error(error);
     }
   }
-  revoke(id) {
-    this.data.revoke(id);
-    this.changed?.();
-  }
-  async onMessage(message) {
-    if (!this.current() || !message?.id || this.seen.has(message.id) || message.author?.bot) return;
-    const wire = parseGuardMessage(message.content ?? "");
-    const channel = this.bridge.channel(message.channel_id);
-    const me = this.current(), sender = message.author?.id;
-    if (!wire || !sender || sender === me || !this.bridge.isDm(channel) || channel.recipients?.length !== 1 || channel.recipients[0] !== sender) return;
-    this.seen.add(message.id);
+  async onCommand(event) {
+    const me = this.current();
+    const seenKey = `${event.pairId}:${event.seq}:${event.at}`;
+    if (!me || !event.wire || !event.from || this.seen.has(seenKey)) return;
+    this.seen.add(seenKey);
     if (this.seen.size > 1e3) this.seen.clear();
-    if (wire.type === "invite") {
-      await this.account.sync(sender);
-      if (this.current() !== me) return;
-      const invite = this.data.value.pendingGuardInvites.find((item) => item.userId === sender && item.nonce === wire.nonce);
-      if (invite) this.api.UI.showNotice(`${this.bridge.name(sender)} invited you to be their Personal Guard.`, { buttons: [
-        { label: "Accept", onClick: () => void this.decide(invite, true) },
-        { label: "Refuse", onClick: () => void this.decide(invite, false) },
-        { label: "View permissions", onClick: () => this.openPage("guards") }
-      ] });
-      return;
-    }
-    if (wire.type === "key") {
-      if (await validatePublicKey(wire.publicKey) && this.current() === me) this.setKey(sender, wire.publicKey);
-      return;
-    }
-    if (wire.to !== me) return;
+    const sender = event.from, { wire } = event;
+    const grant = this.data.value.personalGuards.find((item) => item.pairId === event.pairId);
+    if (!grant || grant.userId !== sender || wire.to !== me) return;
+    const pinned = this.keyFor(sender);
+    if (!pinned || pinned !== wire.fromKey) return this.error("Guard command rejected: secure key does not match.");
     let payload;
     try {
       payload = await openGuardPayload(wire, await getGuardKeys(), sender, me);
     } catch {
-      return this.error("Guard message could not be decrypted. Use the newest invitation.");
+      payload = null;
     }
-    if (!payload || this.current() !== me) return;
-    if (payload.kind === "grant") {
-      if (payload.ownerId !== sender || Math.abs(Date.now() - payload.createdAt) > MAX_GRANT_AGE) return;
-      if (this.data.value.knownGuardGrants.some((item) => item.userId === sender && item.inviteNonce) || this.data.value.pendingGuardInvites.some((item) => item.userId === sender)) return;
-      this.setKey(sender, wire.fromKey);
-      this.data.value.knownGuardGrants = [
-        ...this.data.value.knownGuardGrants.filter((item) => item.userId !== sender),
-        ...payload.actions.length ? [{ userId: sender, actions: [...payload.actions] }] : []
-      ];
-      this.data.save();
-      this.changed?.();
-      return;
-    }
+    if (!payload || payload.kind !== "command" || this.current() !== me) return this.error("Guard command could not be verified.");
     const reason = guardCommandRejection(this.data.value, payload, {
       ownerId: me,
       senderId: sender,
       senderKey: wire.fromKey,
-      pinnedKey: this.keyFor(sender),
+      pinnedKey: pinned,
       sharesVoice: this.bridge.sharesVoice(sender),
       now: Date.now()
     });
@@ -1073,15 +1122,6 @@ var GuardService = class {
       return this.error("Could not save the command receipt. Nothing was changed.");
     }
     if (this.current() !== me) return;
-    const changed = guardCommandRejection(
-      {
-        ...this.data.value,
-        guardReplay: this.data.value.guardReplay.filter((entry) => entry.nonce !== payload.nonce)
-      },
-      payload,
-      { ownerId: me, senderId: sender, senderKey: wire.fromKey, pinnedKey: this.keyFor(sender), sharesVoice: this.bridge.sharesVoice(sender), now: Date.now() }
-    );
-    if (changed) return this.error(changed);
     const undo = this.bridge.applyGuardAction(payload.action);
     if (!undo) return this.error("Discord's voice action is unavailable. Nothing was changed.");
     this.api.UI.showNotice(`${this.bridge.name(sender)} applied ${GUARD_LABELS[payload.action]} to your account.`, { buttons: [
@@ -1114,7 +1154,6 @@ function installUserMenu(api, view) {
       const user = props?.user ?? props?.contextMenuAPIArguments?.[0]?.user ?? instance?.props?.user ?? tree?.props?.user ?? tree?.props?.contextMenuAPIArguments?.[0]?.user ?? api.Utils?.findInTree?.(tree, (item) => !!item?.user?.id, { walkable: ["props", "children"] })?.user;
       const id = user?.id;
       if (!id || id === view.bridge.currentId()) return;
-      void view.guards.account.sync(id, GUARD_PASSIVE_PAGES);
       const known = view.guards.knownFor(id);
       const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter((action) => known.includes(action)) : [];
       const guardItems = [
@@ -1128,7 +1167,7 @@ function installUserMenu(api, view) {
         },
         ...available.length ? [{ type: "submenu", id: "fivbd-guard-actions", label: "Guard Actions", items: available.map((action) => ({
           id: `fivbd-guard-${action}`,
-          label: `Prepare ${GUARD_LABELS[action]} DM`,
+          label: GUARD_LABELS[action],
           action: () => {
             view.close();
             void view.guards.sendCommand(id, action);
@@ -2218,11 +2257,36 @@ function identity(id, view) {
     }
   });
 }
+function codeBox(view, id, code, expiresAt) {
+  const box = element("div", "fivbd-card");
+  const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 6e4));
+  add(
+    box,
+    paragraph(`Invite code for ${view.bridge.name(id)}: ${formatCode(code)}`),
+    paragraph(`It works once, only for their account, for ${minutes} minutes. They enter it in their Personal Guards tab.`)
+  );
+  const controls = element("div", "fivbd-actions");
+  add(
+    controls,
+    button("Copy code", () => {
+      void navigator.clipboard?.writeText(formatCode(code));
+      view.api?.UI?.showToast?.("Code copied", { type: "info" });
+    }),
+    button("Put it in their DM", () => {
+      view.close();
+      void view.guards.draftCode(id, code);
+    })
+  );
+  box.append(controls);
+  return box;
+}
 function ownerCard(id, view) {
   const { data, guards } = view;
+  const grant = data.value.personalGuards.find((item) => item.userId === id);
   const actions = guards.grantFor(id);
+  const open = grant?.code && grant.codeExpiresAt > Date.now();
   const card = element("section", "fivbd-card");
-  add(card, identity(id, view), paragraph("Choose their allowed actions, then send one invitation. They choose Accept or Refuse."));
+  add(card, identity(id, view), paragraph(grant?.pairId ? "Active. They can use the checked actions while you're both in the same voice channel." : open ? "Waiting for them to enter the code." : "Choose their allowed actions, then get an invite code and give it to them."));
   const options = element("div", "fivbd-guard-options");
   for (const action of GUARD_ACTIONS) {
     const label = element("label");
@@ -2231,20 +2295,24 @@ function ownerCard(id, view) {
     checkbox.checked = actions.includes(action);
     checkbox.addEventListener("change", () => {
       const next = checkbox.checked ? [...actions, action] : actions.filter((item) => item !== action);
-      data.grant(id, next);
+      guards.setGrant(id, next);
       view.render();
     });
     add(label, checkbox, element("span", "", GUARD_LABELS[action]));
     options.append(label);
   }
   card.append(options);
+  if (open) card.append(codeBox(view, id, grant.code, grant.codeExpiresAt));
   const controls = element("div", "fivbd-actions");
-  const prepare = button("Invite guardian", () => {
-    view.close();
-    void guards.invite(id);
-  });
-  prepare.disabled = !actions.length;
-  add(controls, prepare, button("Revoke and remove", () => {
+  if (!grant?.pairId) {
+    const prepare = button(open ? "New invite code" : "Get invite code", async () => {
+      await guards.invite(id);
+      view.render();
+    });
+    prepare.disabled = !actions.length;
+    controls.append(prepare);
+  }
+  controls.append(button("Revoke and remove", () => {
     guards.revoke(id);
     view.render();
   }, "danger"));
@@ -2254,27 +2322,64 @@ function ownerCard(id, view) {
 function accessCard(id, view) {
   const card = element("section", "fivbd-card");
   const together = view.bridge.sharesVoice(id);
-  add(card, identity(id, view), paragraph(together ? "Choose one action, then press Send in the prepared DM." : "Join the same voice channel to use guard actions."));
+  const actions = view.guards.knownFor(id);
+  add(card, identity(id, view), paragraph(!actions.length ? "This access came from an old DM invite and no longer works. Ask them for an invite code." : together ? "Choose one action. It applies right away." : "Join the same voice channel to use guard actions."));
   const controls = element("div", "fivbd-actions");
-  for (const action of view.guards.knownFor(id)) {
-    const item = button(GUARD_LABELS[action], () => {
-      view.close();
-      void view.guards.sendCommand(id, action);
-    });
+  for (const action of actions) {
+    const item = button(GUARD_LABELS[action], () => void view.guards.sendCommand(id, action));
     item.disabled = !together || !view.guards.keyFor(id);
     controls.append(item);
   }
-  controls.append(button("Remove access", () => void view.guards.removeAccess(id), "danger"));
+  controls.append(button("Remove access", async () => {
+    await view.guards.removeAccess(id);
+    view.render();
+  }, "danger"));
   card.append(controls);
   return card;
+}
+function codeEntry(view) {
+  const wrap = element("div", "fivbd-actions");
+  const input = element("input", "fivbd-search");
+  input.placeholder = "Enter a guard code, like ABCD-2345";
+  input.maxLength = 12;
+  const result = element("div");
+  const use = button("Use code", async () => {
+    const offer = await view.guards.lookup(input.value);
+    result.replaceChildren();
+    if (!offer) return;
+    const card = element("section", "fivbd-card");
+    add(
+      card,
+      paragraph(`Become ${view.bridge.name(offer.ownerId)}'s Personal Guard?`),
+      paragraph(`While you're both in the same voice channel you'll be able to: ${offer.actions.map((action) => GUARD_LABELS[action]).join(" \xB7 ")}`),
+      button("Accept", async () => {
+        if (await view.guards.decide(offer.code, true)) {
+          input.value = "";
+          view.render();
+        }
+      }),
+      button("Refuse", async () => {
+        if (await view.guards.decide(offer.code, false)) {
+          input.value = "";
+          result.replaceChildren();
+        }
+      }, "danger")
+    );
+    result.append(card);
+  });
+  add(wrap, input, use);
+  const box = element("div");
+  add(box, wrap, result);
+  return box;
 }
 function renderGuardsTab(parent, view) {
   add(
     parent,
     heading("Personal Guards", 2),
-    paragraph("Right-click a person in Discord \u2192 Personal Guards \u2192 Add as Guardian. Choose exactly which actions they may use on your account."),
-    paragraph("Send one invitation. They accept or refuse it here. Accepted access follows their Discord account on devices with this plugin. Each voice action is one encrypted DM you send manually.")
+    paragraph("Right-click a person in Discord \u2192 Personal Guards \u2192 Add as Guardian. Choose exactly which actions they may use on your account, then give them the invite code."),
+    paragraph("Pairing and commands go through the Friends in Voice server, end-to-end encrypted, and never through Discord messages. Your private key stays on this device.")
   );
+  add(parent, heading("Enter an invite code"), codeEntry(view));
   const search = element("input", "fivbd-search");
   search.type = "search";
   search.placeholder = "Search guardians and access\u2026";
@@ -2283,19 +2388,6 @@ function renderGuardsTab(parent, view) {
     contents.replaceChildren();
     const query = search.value.trim().toLowerCase();
     const match = (id) => `${view.bridge.name(id)} ${view.bridge.user(id)?.username ?? ""} ${id}`.toLowerCase().includes(query);
-    const pending = view.data.value.pendingGuardInvites.filter((invite) => match(invite.userId));
-    if (pending.length) contents.append(heading("Invitations"));
-    for (const invite of pending) {
-      const card = element("section", "fivbd-card");
-      add(
-        card,
-        identity(invite.userId, view),
-        paragraph(invite.actions.map((action) => GUARD_LABELS[action]).join(" \xB7 ")),
-        button("Accept", () => void view.guards.decide(invite, true)),
-        button("Refuse", () => void view.guards.decide(invite, false), "danger")
-      );
-      contents.append(card);
-    }
     add(contents, heading("People who guard me"));
     const owners = element("div", "fivbd-grid");
     for (const item of view.data.value.personalGuards.filter((item2) => match(item2.userId))) owners.append(ownerCard(item.userId, view));
@@ -2305,7 +2397,7 @@ function renderGuardsTab(parent, view) {
     const access = element("div", "fivbd-grid");
     for (const item of view.data.value.knownGuardGrants.filter((item2) => match(item2.userId))) access.append(accessCard(item.userId, view));
     contents.append(access);
-    if (!view.data.value.knownGuardGrants.length) contents.append(paragraph("No accepted access yet. Accept an invitation from its notice or the Invitations list above.", "fivbd-empty"));
+    if (!view.data.value.knownGuardGrants.length) contents.append(paragraph("No access yet. When someone gives you an invite code, enter it above.", "fivbd-empty"));
   }
   search.addEventListener("input", update);
   add(parent, search, contents);
@@ -2944,6 +3036,7 @@ var Dashboard = class {
   }
   open(tab = this.tab) {
     this.tab = TABS.some((item) => item[0] === tab) ? tab : "voice";
+    if (this.tab === "guards") void this.guards?.refresh(true);
     if (!this.shade) {
       this.shade = element("div", "fivbd-shade");
       this.shade.addEventListener("click", (event) => {
@@ -3025,12 +3118,11 @@ module.exports = class FriendsInVoice {
       Object.assign(this.view, { guards: this.guards, replies: this.replies, alerts: this.alerts, voiceLog: this.voiceLog, autoStatus: this.autoStatus });
       this.view.start();
       this.unsubscribers.push(installUserMenu(this.api, this.view));
-      const onMessage = (event) => void this.guards.onMessage(event?.message).catch((error) => this.api.Logger.error("Guard message failed", error));
       const loadAccount = async () => {
         const id = this.bridge.currentId();
         await this.data.useAccount(id);
         void this.voiceLog.useAccount(id);
-        if (this.started) void this.guards.account.refresh();
+        if (this.started) void this.guards.start();
       };
       this.data.onAccount = () => this.view.refresh();
       const showWhatsNew = () => {
@@ -3050,22 +3142,16 @@ module.exports = class FriendsInVoice {
       const onVoice = (event) => {
         this.voiceLog.onUpdates(event?.voiceStates);
         this.autoStatus.onUpdates(event?.voiceStates);
-        for (const id of Object.keys(this.bridge.voiceStore.getVoiceStatesForChannel?.(this.bridge.myVoiceChannel()) ?? {}).slice(0, 20))
-          void this.guards.account.sync(id, 1);
+        this.guards.listen();
       };
       const logEvents = {
         RELATIONSHIP_ADD: (event) => this.voiceLog.onRelationshipAdd(event?.relationship),
         RELATIONSHIP_REMOVE: (event) => this.voiceLog.onRelationshipRemove(event?.relationship),
         GUILD_CREATE: (event) => event?.guild?.id && this.voiceLog.guild(event.guild.id),
         GUILD_UPDATE: (event) => event?.guild?.id && this.voiceLog.guild(event.guild.id),
-        GUILD_DELETE: (event) => this.voiceLog.onGuildDelete(event?.guild),
-        CHANNEL_SELECT: (event) => this.guards.account.onChannel(event?.channelId),
-        MESSAGE_REACTION_ADD: (event) => this.guards.account.onReaction(event),
-        MESSAGE_REACTION_REMOVE: (event) => this.guards.account.onReaction(event)
+        GUILD_DELETE: (event) => this.voiceLog.onGuildDelete(event?.guild)
       };
-      this.bridge.dispatcher.subscribe("MESSAGE_CREATE", onMessage);
       this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
-      this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("MESSAGE_CREATE", onMessage));
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
       this.bridge.dispatcher.subscribe("LOGOUT", onLogout);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("LOGOUT", onLogout));

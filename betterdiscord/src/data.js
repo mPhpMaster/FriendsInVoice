@@ -10,7 +10,7 @@ export const STATUSES = ["online", "idle", "dnd", "invisible"];
 const DEFAULTS = {
     watchlist: [], notifyOnline: [], blacklist: [], notifyVoice: [], hidden: [],
     notifyOnce: true, smartReplies: true, smartRepliesAi: false,
-    anthropicApiKey: "", aiModel: "claude-opus-5-5", checkForUpdates: true, showWhatsNew: true,
+    anthropicApiKey: "", aiModel: "claude-opus-5-5", guardServer: "https://friendsinvoice.sarhsoft.com", checkForUpdates: true, showWhatsNew: true,
     autoStatus: false, statusInCall: "online", statusOutsideCall: "invisible",
     personalGuards: [], knownGuardGrants: [], pendingGuardInvites: [], declinedGuardInvites: [], guardPeerKeys: [], guardBlocks: [], guardReplay: []
 };
@@ -25,6 +25,7 @@ export function normalizeData(raw) {
         if (typeof source[key] === "boolean") data[key] = source[key];
     for (const key of ["anthropicApiKey", "aiModel"])
         if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
+    if (typeof source.guardServer === "string" && /^https:\/\/[^/\s]+\/?$/i.test(source.guardServer.trim())) data.guardServer = source.guardServer.trim();
     for (const key of ["statusInCall", "statusOutsideCall"])
         if (STATUSES.includes(source[key])) data[key] = source[key];
     for (const key of ["personalGuards", "knownGuardGrants"])
@@ -102,10 +103,9 @@ export class DataStore {
     }
     grant(id, actions) {
         if (!isId(id) || !Array.isArray(actions) || !actions.every(isAction)) return false;
+        const current = this.value.personalGuards.find(item => item.userId === id);
         this.value.personalGuards = [...this.value.personalGuards.filter(item => item.userId !== id),
-            { userId: id, actions: ACTIONS.filter(action => actions.includes(action)),
-                ...(this.value.personalGuards.find(item => item.userId === id)?.inviteNonce ?
-                    { inviteNonce: this.value.personalGuards.find(item => item.userId === id).inviteNonce } : {}) }];
+            { ...current, userId: id, actions: ACTIONS.filter(action => actions.includes(action)) }];
         this.save();
         return true;
     }

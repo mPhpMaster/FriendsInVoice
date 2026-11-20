@@ -9,8 +9,6 @@ import type { User } from "@vencord/discord-types";
 import { Menu, UserStore } from "@webpack/common";
 
 import { inList, selfMenuItems, settings, toggleInList } from ".";
-import { GUARD_PASSIVE_PAGES } from "./personalGuardsAccount";
-import { syncGuardOwner } from "./personalGuardsAccountSync";
 import { openGuardModal } from "./personalGuardsModal";
 import { GUARD_ACTIONS, GUARD_VERBS } from "./personalGuardsProtocol";
 import { guardDisplayName, hasGuardKey, sendGuardCommand, sharesVoice } from "./personalGuardsRuntime";
@@ -22,14 +20,13 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
         return;
     }
 
-    void syncGuardOwner(user.id, false, GUARD_PASSIVE_PAGES);
     const watched = inList("watchlist", user.id);
     const notifyVoice = inList("notifyVoice", user.id);
     const notify = inList("notifyOnline", user.id);
     const blocked = inList("blacklist", user.id);
     const hidden = inList("hidden", user.id);
     const known = settings.store.knownGuardGrants.find(grant => grant.userId === user.id);
-    const actions = known && hasGuardKey(settings.store, user.id) && sharesVoice(user.id)
+    const actions = known?.pairId && hasGuardKey(settings.store, user.id) && sharesVoice(user.id)
         ? GUARD_ACTIONS.filter(action => known.actions.includes(action)) : [];
 
     const isGuardian = settings.store.personalGuards.some(grant => grant.userId === user.id);

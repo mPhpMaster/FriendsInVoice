@@ -4,96 +4,84 @@ import { indexedDB } from "fake-indexeddb";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { DataStore, normalizeData } from "../src/data.js";
+import { createApp, GuardStore } from "../../server/server.mjs";
+import { DataStore } from "../src/data.js";
+import { memoryStore } from "./memoryStore.mjs";
 
 const ownerId = "111111111111111111", guardianId = "222222222222222222", outsiderId = "333333333333333333";
-const channelId = "444444444444444444";
-const messageId = "555555555555555555";
 
 async function modules() {
     const result = await build({ stdin: { contents: `
         export { GuardService } from "./src/guards.js";
-        export { makeCommand, parseGuardMessage, serializeWire } from "../friendsInVoice/personalGuardsProtocol.ts";
-        export { sealGuardPayload } from "../friendsInVoice/personalGuardsCrypto.ts";
+        export { codeFromText } from "../friendsInVoice/guardServer.ts";
     `, resolveDir: fileURLToPath(new URL("..", import.meta.url)) }, bundle: true, platform: "node", format: "esm", write: false });
     return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
 }
 
-async function data(id) {
-    const entries = new Map();
-    const value = new DataStore({ Data: { load: () => null, save() {} } }, {
-        get: async key => entries.get(key), put: async (key, entry) => entries.set(key, structuredClone(entry))
-    });
+async function data(id, server) {
+    const value = new DataStore({ Data: { load: () => null, save() {} } }, memoryStore());
     await value.useAccount(id);
+    value.value.guardServer = server;
     return value;
 }
 
-test("BetterDiscord invitation accepts across devices and interoperates with Vencord encrypted actions", async () => {
+test("pairing with a code and a guard command go only through the Friends in Voice server", async () => {
     const previous = globalThis.indexedDB;
     globalThis.indexedDB = indexedDB;
+    const server = createApp({ store: new GuardStore(null) });
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
     const services = [];
     try {
-        const { GuardService, makeCommand, parseGuardMessage, serializeWire, sealGuardPayload } = await modules();
-        const drafts = [], applied = [], notices = [], reactions = new Set();
-        let messages = [];
+        const { GuardService, codeFromText } = await modules();
+        const urls = [], drafts = [], applied = [], notices = [];
+        const transport = async ({ method, url, token, body }) => {
+            urls.push(url);
+            const response = await fetch(url, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+                body: body === undefined ? undefined : JSON.stringify(body) });
+            return { status: response.status, body: await response.json() };
+        };
         const api = { UI: { showToast() {}, showNotice: (text, options) => notices.push({ text, options }) } };
-        const bridge = (me, peer) => ({ currentId: () => me, name: id => id, selectedChannel: () => channelId,
-            channel: () => ({ id: channelId, isDM: () => true, recipients: [peer] }), isDm: value => value.isDM(),
-            channelStore: { getDMFromUserId: () => channelId }, sharesVoice: () => true,
+        const bridge = me => ({ currentId: () => me, name: id => id, myVoiceChannel: () => "voice", sharesVoice: () => true,
             prepareDm: async (id, text) => drafts.push({ id, text }),
-            guardHistory: async () => messages.map(message => ({ ...message, reactions: [...reactions].map(name => ({ emoji: { name }, me: true })) })),
-            guardReaction: async (_channel, _message, emoji, add) => add ? reactions.add(emoji) : reactions.delete(emoji),
-            applyGuardAction: action => { applied.push(action); return () => {}; }
-        });
-        const ownerData = await data(ownerId), guardianData = await data(guardianId);
-        ownerData.grant(guardianId, ["mute"]);
-        const owner = new GuardService(api, bridge(ownerId, guardianId), ownerData, () => {});
-        const guardian = new GuardService(api, bridge(guardianId, ownerId), guardianData, () => {});
-        services.push(owner, guardian);
-        await owner.invite(guardianId);
-        const wire = parseGuardMessage(drafts[0].text);
-        assert.equal(wire.type, "invite");
-        messages = [{ id: messageId, channel_id: channelId, author: { id: ownerId }, content: drafts[0].text }];
-        await guardian.onMessage(messages[0]);
-        assert.deepEqual(guardianData.value.knownGuardGrants, []);
-        assert.equal(guardianData.value.pendingGuardInvites.length, 1);
-        assert.ok(notices.some(item => item.options?.buttons.some(button => button.label === "Accept")));
-        await guardian.decide(guardianData.value.pendingGuardInvites[0], true);
-        assert.deepEqual(guardian.knownFor(ownerId), ["mute"]);
-        assert.deepEqual(guardianData.value.personalGuards, []);
-        const deviceData = await data(guardianId);
-        const device = new GuardService(api, bridge(guardianId, ownerId), deviceData, () => {});
-        services.push(device);
-        assert.equal(await device.account.sync(ownerId), true);
-        assert.deepEqual(device.knownFor(ownerId), ["mute"]);
-        await device.sendCommand(ownerId, "mute");
-        const command = parseGuardMessage(drafts.at(-1).text);
-        await owner.onMessage({ id: "600000000000000001", channel_id: channelId, author: { id: guardianId }, content: serializeWire(command) });
-        await owner.onMessage({ id: "600000000000000002", channel_id: channelId, author: { id: guardianId }, content: serializeWire(command) });
-        assert.deepEqual(applied, ["mute"]);
-        const freshPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
-        const forbidden = await sealGuardPayload(makeCommand(ownerId, "disconnect", wire.nonce), freshPair, wire.publicKey, guardianId, ownerId);
-        await owner.onMessage({ id: "600000000000000003", channel_id: channelId, author: { id: guardianId }, content: serializeWire(forbidden) });
-        assert.deepEqual(applied, ["mute"]);
-        const outsiderData = await data(ownerId);
-        outsiderData.grant(guardianId, ["mute"]);
-        const isolated = new GuardService(api, bridge(ownerId, outsiderId), outsiderData, () => {});
-        services.push(isolated);
-        const forged = await sealGuardPayload(makeCommand(ownerId, "mute", wire.nonce), freshPair, wire.publicKey, outsiderId, ownerId);
-        await isolated.onMessage({ id: "600000000000000004", channel_id: channelId, author: { id: outsiderId }, content: serializeWire(forged) });
-        assert.deepEqual(applied, ["mute"]);
-        await device.removeAccess(ownerId);
-        assert.equal(await guardian.account.sync(ownerId), false);
-        assert.deepEqual(guardian.knownFor(ownerId), []);
-        assert.ok(reactions.has("❌"));
-        assert.ok(!reactions.has("✅"));
-        const normalized = normalizeData(ownerData.value);
-        assert.equal(normalized.personalGuards[0].inviteNonce, wire.nonce);
-        assert.equal(normalized.guardReplay[0].guardianId, guardianId);
+            applyGuardAction: action => { applied.push(action); return () => {}; } });
+        const make = async id => {
+            const service = new GuardService(api, bridge(id), await data(id, base), () => {}, { transport, meta: memoryStore(), poll: false });
+            services.push(service);
+            return service;
+        };
+        const owner = await make(ownerId), guardian = await make(guardianId), outsider = await make(outsiderId);
+
+        owner.setGrant(guardianId, ["mute", "deafen"]);
+        const { code } = await owner.invite(guardianId);
+        await owner.draftCode(guardianId, code);
+        assert.equal(codeFromText(drafts[0].text), code, "the code the owner sends is one plain line");
+        assert.equal(await outsider.lookup(code), null, "a code only works for the chosen guardian");
+
+        const offer = await guardian.lookup(code.toLowerCase());
+        assert.deepEqual([offer.ownerId, offer.actions], [ownerId, ["mute", "deafen"]]);
+        assert.equal(await guardian.decide(offer.code, true), true);
+        assert.deepEqual(guardian.knownFor(ownerId), ["mute", "deafen"]);
+        await owner.refresh(true);
+        assert.ok(owner.data.value.personalGuards[0].pairId);
+
+        const before = (await owner.client.events(0, 0)).last;
+        await guardian.sendCommand(ownerId, "mute");
+        await guardian.sendCommand(ownerId, "disconnect");
+        const { events } = await owner.client.events(before, 0);
+        await owner.onEvents(events);
+        assert.deepEqual(applied, ["mute"], "only the allowed action runs, once");
+        assert.equal(notices.length, 1);
+
         owner.revoke(guardianId);
-        assert.deepEqual(owner.grantFor(guardianId), []);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        await guardian.refresh(true);
+        assert.deepEqual(guardian.knownFor(ownerId), []);
+        assert.ok(urls.length > 0 && urls.every(url => url.startsWith(base)), "no request goes to Discord");
     } finally {
         for (const service of services) service.stop();
+        server.closeAllConnections?.();
+        server.close();
         globalThis.indexedDB = previous;
     }
 });
