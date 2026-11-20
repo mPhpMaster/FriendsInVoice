@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.19.0
+ * @version 1.20.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -37,7 +37,7 @@ var AlertService = class {
     const settings = this.data.value;
     for (const id of /* @__PURE__ */ new Set([...settings.notifyOnline, ...settings.blacklist]))
       this.previousStatus.set(id, this.bridge.status(id));
-    for (const id of settings.notifyVoice) this.previousVoice.set(id, this.bridge.voiceChannel(id));
+    for (const id of settings.notifyVoice) this.previousVoice.set(id, this.bridge.visibleVoiceChannel(id));
   }
   reconnect() {
     this.quietUntil = Date.now() + 15e3;
@@ -63,7 +63,7 @@ var AlertService = class {
       }
     }
     for (const id of settings.notifyVoice) {
-      const now = this.bridge.voiceChannel(id);
+      const now = this.bridge.visibleVoiceChannel(id);
       const before = this.previousVoice.get(id);
       this.previousVoice.set(id, now);
       if (Date.now() < this.quietUntil || before === void 0 || before || !now) continue;
@@ -101,22 +101,45 @@ var AlertService = class {
 };
 
 // src/autoStatus.js
+var AUTO_STATUS_DELAY = 1e4;
+var AUTO_STATUS_PER_MINUTE = 3;
 var AutoStatus = class {
-  constructor(api, bridge, data) {
+  constructor(api, bridge, data, timers = { set: setTimeout, clear: clearTimeout, now: Date.now }) {
     this.api = api;
     this.bridge = bridge;
     this.data = data;
+    this.timers = timers;
+    this.pending = null;
+    this.writes = [];
   }
+  /** only writes when the status actually changes, and at most 3 times a minute */
   apply(inCall = !!this.bridge.myVoiceChannel()) {
     const { autoStatus, statusInCall, statusOutsideCall } = this.data.value;
     if (!autoStatus || !this.bridge.currentId()) return;
-    void this.bridge.setStatus(inCall ? statusInCall : statusOutsideCall).catch((error) => this.api.Logger.error("Auto switch status failed", error));
+    const now = this.timers.now();
+    this.writes = this.writes.filter((time) => now - time < 6e4);
+    if (this.writes.length >= AUTO_STATUS_PER_MINUTE) return this.schedule(6e4 - (now - this.writes[0]) + 1e3);
+    const wanted = inCall ? statusInCall : statusOutsideCall;
+    if (this.bridge.currentStatus?.() === wanted) return;
+    this.writes.push(now);
+    void this.bridge.setStatus(wanted).catch((error) => this.api.Logger.error("Auto switch status failed", error));
   }
+  schedule(delay) {
+    this.cancel();
+    this.pending = this.timers.set(() => {
+      this.pending = null;
+      this.apply();
+    }, delay);
+  }
+  cancel() {
+    if (this.pending) this.timers.clear(this.pending);
+    this.pending = null;
+  }
+  /** quick channel hopping ends in one status change, for wherever you are 10 seconds after the last hop */
   onUpdates(voiceStates) {
     if (!this.data.value.autoStatus || !Array.isArray(voiceStates)) return;
     const me = this.bridge.currentId();
-    const mine = voiceStates.find((state) => state?.userId === me);
-    if (mine) this.apply(!!mine.channelId);
+    if (voiceStates.some((state) => state?.userId === me)) this.schedule(AUTO_STATUS_DELAY);
   }
 };
 
@@ -198,6 +221,7 @@ var DEFAULTS = {
   checkForUpdates: true,
   showWhatsNew: true,
   autoStatus: false,
+  autoAllowGuardCommands: false,
   statusInCall: "online",
   statusOutsideCall: "invisible",
   personalGuards: [],
@@ -214,7 +238,7 @@ function normalizeData(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const data = { ...DEFAULTS };
   for (const key of LISTS) data[key] = Array.isArray(source[key]) ? [...new Set(source[key].filter(isId))] : [];
-  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus"])
+  for (const key of ["notifyOnce", "smartReplies", "smartRepliesAi", "checkForUpdates", "showWhatsNew", "autoStatus", "autoAllowGuardCommands"])
     if (typeof source[key] === "boolean") data[key] = source[key];
   for (const key of ["anthropicApiKey", "aiModel"])
     if (typeof source[key] === "string") data[key] = source[key].slice(0, 300);
@@ -443,6 +467,25 @@ var DiscordBridge = class {
     const messages = this.messageStore?.getMessages?.(channelId)?._array ?? [];
     return messages.filter((message) => message.content?.trim()).slice(-8).map((message) => ({ mine: message.author?.id === this.currentId(), content: message.content.slice(0, 500) }));
   }
+  /** server voice rooms you can't see (no View Channel) are left out everywhere: lists, the Log and alerts */
+  canSee(channel) {
+    if (!channel) return false;
+    if (!channel.guild_id) return true;
+    if (channel.name === "___hidden___" || channel.flags & CHANNEL_OBFUSCATED) return false;
+    return !!this.permissionStore.can(VIEW_CHANNEL, channel);
+  }
+  /** the voice room someone is in, or null when they aren't in one you can see */
+  visibleVoiceChannel(id) {
+    const channelId = this.voiceChannel(id);
+    return channelId && this.canSee(this.channel(channelId)) ? channelId : null;
+  }
+  currentStatus() {
+    try {
+      return this.findStatusSetting().getSetting?.();
+    } catch {
+      return void 0;
+    }
+  }
   roomDescription(channel) {
     const guild = channel.guild_id && this.guildStore?.getGuild?.(channel.guild_id);
     if (guild) return { place: guild.name, roomName: channel.name === "___hidden___" || channel.flags & CHANNEL_OBFUSCATED ? "Private channel" : channel.name ?? "Voice", guildId: guild.id };
@@ -465,7 +508,7 @@ var DiscordBridge = class {
     for (const [channelId, members] of byChannel) {
       if (!members.some((state) => state.userId !== me && tracked.has(state.userId))) continue;
       const channel = this.channel(channelId);
-      if (!channel) continue;
+      if (!this.canSee(channel)) continue;
       const info = this.roomDescription(channel);
       result.push({
         channelId,
@@ -1122,20 +1165,39 @@ var GuardService = class {
       return this.error("Could not save the command receipt. Nothing was changed.");
     }
     if (this.current() !== me) return;
-    const undo = this.bridge.applyGuardAction(payload.action);
-    if (!undo) return this.error("Discord's voice action is unavailable. Nothing was changed.");
-    this.api.UI.showNotice(`${this.bridge.name(sender)} applied ${GUARD_LABELS[payload.action]} to your account.`, { buttons: [
-      { label: "Undo", onClick: () => {
-        if (this.current() === me) undo();
+    const block = { label: "Block 15 minutes", onClick: () => {
+      if (this.current() !== me) return;
+      this.data.value.guardBlocks = [...this.data.value.guardBlocks.filter((item) => item.userId !== sender), { userId: sender, until: Date.now() + 15 * 6e4 }];
+      this.data.save();
+    } };
+    const run2 = () => {
+      const undo = this.bridge.applyGuardAction(payload.action);
+      if (!undo) {
+        this.error("Discord's voice action is unavailable. Nothing was changed.");
+        return;
+      }
+      this.api.UI.showNotice(`${this.bridge.name(sender)} applied ${GUARD_LABELS[payload.action]} to your account.`, { buttons: [
+        { label: "Undo", onClick: () => {
+          if (this.current() === me) undo();
+        } },
+        block
+      ] });
+    };
+    if (this.data.value.autoAllowGuardCommands) return run2();
+    const expiresAt = Date.now() + GUARD_REQUEST_TTL;
+    let answered = false;
+    this.api.UI.showNotice(`${this.bridge.name(sender)} wants to use ${GUARD_LABELS[payload.action]} on your account.`, { timeout: GUARD_REQUEST_TTL, buttons: [
+      { label: "Allow", onClick: () => {
+        if (answered || Date.now() > expiresAt || this.current() !== me) return;
+        answered = true;
+        if (!this.bridge.sharesVoice(sender)) return this.error("You're no longer in the same voice channel.");
+        run2();
       } },
-      { label: "Block 15 minutes", onClick: () => {
-        if (this.current() !== me) return;
-        this.data.value.guardBlocks = [...this.data.value.guardBlocks.filter((item) => item.userId !== sender), { userId: sender, until: Date.now() + 15 * 6e4 }];
-        this.data.save();
-      } }
+      block
     ] });
   }
 };
+var GUARD_REQUEST_TTL = 6e4;
 
 // src/menu.js
 function listItem(view, id, key, addText, removeText) {
@@ -2146,7 +2208,8 @@ var SWITCHES = [
   ["smartRepliesAi", "Enable the optional Claude reply button"],
   ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
   ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
-  ["autoStatus", "Auto switch status: change your status when you join or leave a call"]
+  ["autoStatus", "Auto switch status: change your status when you join or leave a call"],
+  ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
 ];
 var STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 function settingsPanel(view) {
@@ -2455,7 +2518,7 @@ function renderSection(parent, view, definition) {
   const grid = element("div", "fivbd-grid");
   for (const id of ids) {
     const card = element("section", "fivbd-card");
-    const room2 = bridge.voiceChannel(id);
+    const room2 = bridge.visibleVoiceChannel(id);
     const channel = room2 && bridge.channel(room2);
     add(
       card,
@@ -2598,7 +2661,7 @@ var VoiceLog = class {
   }
   room(channelId) {
     const channel = channelId && this.bridge.channel(channelId);
-    return channel ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
+    return channel && this.bridge.canSee(channel) ? { id: channel.id, ...this.bridge.roomDescription(channel) } : null;
   }
   onUpdates(voiceStates = []) {
     const me = this.bridge.currentId();
@@ -2977,6 +3040,7 @@ function renderVoiceTab(parent, view) {
   update();
   renderHidden(parent, view);
 }
+var HIDDEN_PREVIEW = 3;
 function renderHidden(parent, view) {
   const ids = view.data.value.hidden;
   if (!ids.length) return;
@@ -2986,7 +3050,8 @@ function renderHidden(parent, view) {
     paragraph("These people don't show up in In Voice. Show someone again here, or right-click them \u2192 Show in In Voice.", "fivbd-muted")
   );
   const list = element("div", "fivbd-grid");
-  for (const id of ids) {
+  const shown = view.showAllHidden ? ids : ids.slice(0, HIDDEN_PREVIEW);
+  for (const id of shown) {
     const row = element("div", "fivbd-person");
     add(row, element("span", "", view.bridge.name(id)), button("Show", () => {
       view.data.toggleList("hidden", id);
@@ -2994,6 +3059,11 @@ function renderHidden(parent, view) {
     }));
     list.append(row);
   }
+  if (ids.length > HIDDEN_PREVIEW)
+    list.append(button(view.showAllHidden ? "Show less" : `Show all (${ids.length})`, () => {
+      view.showAllHidden = !view.showAllHidden;
+      view.render();
+    }));
   parent.append(list);
 }
 
@@ -3190,6 +3260,7 @@ module.exports = class FriendsInVoice {
         this.api.Logger.error("Cleanup failed", error);
       }
     }
+    this.autoStatus?.cancel();
     this.guards?.stop();
     this.voiceLog?.stop();
     this.view?.stop();

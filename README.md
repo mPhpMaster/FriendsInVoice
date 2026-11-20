@@ -22,7 +22,7 @@ Every voice room that has at least one of your **friends** in it, laid out side 
 - **"Here because of:"**: the friends that put this room on the list, so you instantly know why it's there,
 - everyone in the room, with `FRIEND` / `MY LIST` / `LIVE` tags and muted/deafened icons,
 - a `SHOWS OFFLINE` tag on friends who are in the room even though their status says offline,
-- a **Join** button (shows `Joined` if you're already there, `Locked` if you lack permission, `Full` if the room is at its user limit; rooms in channels you can't open show as *Private channel*),
+- a **Join** button (shows `Joined` if you're already there, `Locked` if you lack permission, `Full` if the room is at its user limit; rooms in channels you can't see aren't listed at all),
 - search across people, servers and rooms.
 
 ### ⭐ My list
@@ -44,7 +44,7 @@ Right-click a user → **Add to Run away** (or **Remove from Run away**). Every 
 
 ### 🙈 Hide someone from In voice
 
-Right-click a user → **Hide from In voice**. They stop showing up in the 🔊 In voice tab, they no longer bring a room into the list, and they don't count in the badge on the server-list button; in a room you see for other friends they're still listed, with a **HIDDEN** tag next to their name. To bring them back, right-click them → **Show in In voice**, or press ✕ next to their name in the 🙈 Hidden list at the bottom of the In voice tab. My list, alerts and Run away keep working for them as before.
+Right-click a user → **Hide from In voice**. They stop showing up in the 🔊 In voice tab, they no longer bring a room into the list, and they don't count in the badge on the server-list button; in a room you see for other friends they're still listed, with a **HIDDEN** tag next to their name. To bring them back, right-click them → **Show in In voice**, or press ✕ next to their name in the 🙈 Hidden list at the bottom of the In voice tab (it shows the first 3; click **Show all** for the rest). My list, alerts and Run away keep working for them as before.
 
 ### 📜 Log
 
@@ -62,7 +62,7 @@ Let a friend you trust mute, deafen, or disconnect **your** account while you're
 
 1. **You:** right-click them → **Make Personal Guard…**, tick what they may do (**Mute microphone**, **Deafen**, **Disconnect from voice**) and click **Get invite code**. Give them the 8-character code (it works once, only for their account, for 10 minutes). **Put it in their DM** fills it into your DM box; you press Enter yourself.
 2. **They:** open Friends in Voice → **Personal Guards** → **Enter an invite code** (or click **Use this code** under your DM), see what you allow, and choose **Accept** or **Refuse**.
-3. **Using it:** while you share a voice channel, they right-click you → **🛡️ Mute <you>** (or Deafen / Disconnect). It applies on your Discord within about a second. You get a notice with **Undo** and a temporary **Block**; if a command is refused, you see why.
+3. **Using it:** while you share a voice channel, they right-click you → **🛡️ Mute <you>** (or Deafen / Disconnect). You get a notice asking first: nothing happens until you click **Allow** (it expires after a minute). After that you can **Undo** it or **Block** them for a while; if a command is refused, you see why. If you'd rather have commands apply right away, turn on *Personal Guards: apply your guardians' commands right away* in the plugin settings.
 
 Change or remove access any time from the same menu (**Personal Guard settings…**). Changes apply right away; removing someone stops their access immediately.
 
@@ -87,7 +87,7 @@ Suggestions disappear as soon as anyone sends a newer message. Turn the feature 
 
 Right-click **yourself** (your name in a voice room, the member list or a message) to find two switches:
 
-- **Stay in voice when away**: Discord won't move you to the server's AFK channel or drop you from a DM call when you step away.
+- **Stay in voice when away**: Discord won't move you to the server's AFK channel or drop you from a DM call when you step away, for up to 2 hours. After 2 hours without mouse or keyboard, you leave the call.
 - **Never go idle**: your status won't switch to Idle when you're away from the computer.
 
 Both are off by default. After changing one, click the notification (or **Reload Discord to apply** in the same menu) to reload Discord. If Vencord's own **DisableCallIdle** or **CustomIdle** plugin is already on, the matching switch shows as handled by it.
@@ -102,7 +102,7 @@ Turn on **Auto switch status** (in the plugin settings, or right-click yourself 
 | In a voice channel, DM call or group call | **Online** *(changeable)* |
 | Not in any call | **Invisible** *(changeable)* |
 
-It switches the moment you join, leave or move between calls, and checks again when Discord starts. Pick both statuses (Online, Idle, Do Not Disturb or Invisible) in the plugin settings, for example *Do Not Disturb* in calls and *Online* otherwise. It's off by default; turning it off leaves your status as it is.
+It switches 10 seconds after you join, leave or move between calls (so hopping between rooms makes one change, not many), at most 3 times a minute, and checks again when Discord starts. Pick both statuses (Online, Idle, Do Not Disturb or Invisible) in the plugin settings, for example *Do Not Disturb* in calls and *Online* otherwise. It's off by default; turning it off leaves your status as it is.
 ### Updates
 
 The plugin checks GitHub for new releases (at startup and every 6 hours). On Windows, macOS and Linux, click the new-version notification to download the package from this repository's GitHub Release, verify its SHA-256 digest, install the plugin source, build Vencord, and restart Discord. Your plugin settings and other plugins stay in place. A failed build restores the previous source and tries to rebuild it. You need writable Vencord source and pnpm available to Discord. You can also click **Check for updates** at the bottom of the page. The check can be turned off in the plugin settings. Versions before v1.9.0, and Linux versions before v1.18.0, need one manual update to gain one-click updating.

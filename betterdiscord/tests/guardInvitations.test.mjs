@@ -70,8 +70,14 @@ test("pairing with a code and a guard command go only through the Friends in Voi
         await guardian.sendCommand(ownerId, "disconnect");
         const { events } = await owner.client.events(before, 0);
         await owner.onEvents(events);
-        assert.deepEqual(applied, ["mute"], "only the allowed action runs, once");
+        assert.deepEqual(applied, [], "nothing runs before you click Allow");
         assert.equal(notices.length, 1);
+        assert.match(notices[0].text, /wants to use/);
+        const allow = notices[0].options.buttons.find(item => item.label === "Allow");
+        allow.onClick();
+        allow.onClick();
+        assert.deepEqual(applied, ["mute"], "only the allowed action runs, once, after Allow");
+        assert.equal(notices.length, 2);
 
         owner.revoke(guardianId);
         await new Promise(resolve => setTimeout(resolve, 50));

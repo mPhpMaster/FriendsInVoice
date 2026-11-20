@@ -54,12 +54,25 @@ function isObfuscated(channel: Channel) {
     return channel.name === "___hidden___" || ((channel as any).flags & CHANNEL_OBFUSCATED) !== 0;
 }
 
+/** Server voice rooms you can't see (no View Channel) are left out everywhere: lists, the Log and alerts. */
+export function canSeeChannel(channel: Channel | null | undefined): channel is Channel {
+    if (!channel) return false;
+    if (!channel.guild_id) return true;
+    return !isObfuscated(channel) && PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel);
+}
+
+/** the voice room someone is in, or null when they aren't in one you can see */
+export function visibleVoiceChannelId(userId: string): string | null {
+    const id = VoiceStateStore.getVoiceStateForUser(userId)?.channelId;
+    return id && canSeeChannel(ChannelStore.getChannel(id)) ? id : null;
+}
+
 export function describeChannel(channel: Channel) {
     const guild = channel.guild_id ? GuildStore.getGuild(channel.guild_id) : null;
     if (guild) {
         return {
             place: guild.name,
-            roomName: isObfuscated(channel) ? "Private channel" : channel.name,
+            roomName: canSeeChannel(channel) ? channel.name : "Private channel",
             icon: guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64` : null
         };
     }
@@ -130,7 +143,7 @@ function collect(watchlist: string[], hiddenList: string[], extra: string | null
         if (!states.some(s => s.userId !== myId && tracked(s.userId))) continue;
 
         const channel = ChannelStore.getChannel(channelId);
-        if (!channel) continue;
+        if (!canSeeChannel(channel)) continue;
 
         const room = buildRoom(channel, states, friendIds, watched, hidden, myId);
         allRooms.push(room);
@@ -259,15 +272,38 @@ export function Avatar({ user, size = 22 }: { user: User; size?: number; }) {
     return <img className={cl("avatar")} style={{ width: size, height: size }} src={user.getAvatarURL(undefined, 64)} alt="" />;
 }
 
-// people Discord hasn't loaded are fetched at most once per session, and only while their row is on screen
+// people Discord hasn't loaded are fetched at most once per session, only while their row is on screen,
+// one at a time with a pause in between, and no more than 20 per session
+const MAX_PROFILE_FETCHES = 20;
+const PROFILE_FETCH_GAP = 1500;
 const requestedUsers = new Set<string>();
+const profileQueue: string[] = [];
+let profileTimer: ReturnType<typeof setTimeout> | undefined;
+
+function fetchNextProfile() {
+    profileTimer = undefined;
+    const id = profileQueue.shift();
+    if (!id) return;
+    if (!UserStore.getUser(id)) UserUtils.getUser(id).catch(() => { });
+    if (profileQueue.length) profileTimer = setTimeout(fetchNextProfile, PROFILE_FETCH_GAP);
+}
+
+function queueProfile(id: string) {
+    if (requestedUsers.has(id) || requestedUsers.size >= MAX_PROFILE_FETCHES) return;
+    requestedUsers.add(id);
+    profileQueue.push(id);
+    if (!profileTimer) profileTimer = setTimeout(fetchNextProfile, PROFILE_FETCH_GAP);
+}
 
 export function useUser(id: string) {
     const user = useStateFromStores([UserStore], () => UserStore.getUser(id));
     useEffect(() => {
-        if (user || requestedUsers.has(id) || requestedUsers.size > 200) return;
-        requestedUsers.add(id);
-        UserUtils.getUser(id).catch(() => { });
+        if (!user) queueProfile(id);
+        // a row that scrolled away before its turn doesn't need the profile anymore
+        return () => {
+            const index = profileQueue.indexOf(id);
+            if (index !== -1) { profileQueue.splice(index, 1); requestedUsers.delete(id); }
+        };
     }, [id, user]);
     return user;
 }
