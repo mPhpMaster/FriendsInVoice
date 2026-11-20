@@ -9,7 +9,7 @@ const SWITCHES = [
     ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
     ["autoStatus", "Status suggestions: when you join or leave a call, ask if you want to change your status (nothing changes until you click)"],
     ["alwaysHideButton", "Keep the Friends In Voice button hidden (Shift + F12 opens the dashboard and shows the button for 5 seconds)"],
-    ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
+    ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get 10 seconds to refuse, then it runs)"]
 ];
 const STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 

@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.22.2
+ * @version 1.23.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -1285,20 +1285,32 @@ var GuardService = class {
       ] });
     };
     if (this.data.value.autoAllowGuardCommands) return run2();
-    const expiresAt = Date.now() + GUARD_REQUEST_TTL;
     let answered = false;
-    this.api.UI.showNotice(`${this.bridge.name(sender)} wants to use ${GUARD_LABELS[payload.action]} on your account.`, { timeout: GUARD_REQUEST_TTL, buttons: [
-      { label: "Allow", onClick: () => {
-        if (answered || Date.now() > expiresAt || this.current() !== me) return;
+    const allow = () => {
+      if (answered || this.current() !== me) return;
+      answered = true;
+      clearTimeout(timer);
+      if (!this.bridge.sharesVoice(sender)) return this.error("You're no longer in the same voice channel.");
+      run2();
+    };
+    const refuse = () => {
+      if (!answered) {
         answered = true;
-        if (!this.bridge.sharesVoice(sender)) return this.error("You're no longer in the same voice channel.");
-        run2();
-      } },
-      block
+        clearTimeout(timer);
+      }
+    };
+    const timer = setTimeout(allow, GUARD_REQUEST_TTL);
+    this.api.UI.showNotice(`${this.bridge.name(sender)} will use ${GUARD_LABELS[payload.action]} on your account in 10 seconds.`, { timeout: GUARD_REQUEST_TTL, buttons: [
+      { label: "Allow now", onClick: allow },
+      { label: "Refuse", onClick: refuse },
+      { ...block, onClick: () => {
+        refuse();
+        block.onClick();
+      } }
     ] });
   }
 };
-var GUARD_REQUEST_TTL = 6e4;
+var GUARD_REQUEST_TTL = 1e4;
 
 // src/menu.js
 function listItem(view, id, key, addText, removeText) {
@@ -2379,7 +2391,7 @@ var SWITCHES = [
   ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
   ["autoStatus", "Status suggestions: when you join or leave a call, ask if you want to change your status (nothing changes until you click)"],
   ["alwaysHideButton", "Keep the Friends In Voice button hidden (Shift + F12 opens the dashboard and shows the button for 5 seconds)"],
-  ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
+  ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get 10 seconds to refuse, then it runs)"]
 ];
 var STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 function settingsPanel(view) {

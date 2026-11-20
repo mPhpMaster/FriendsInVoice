@@ -79,7 +79,7 @@ export const settings = definePluginSettings({
     },
     autoAllowGuardCommands: {
         type: OptionType.BOOLEAN,
-        description: "Personal Guards: apply your guardians' commands right away, without asking you first (off: you get an Allow button and nothing happens until you click it)",
+        description: "Personal Guards: apply your guardians' commands right away, without asking you first (off: you get a notice with Allow and Refuse, and it runs by itself after 10 seconds unless you refuse)",
         default: false,
     },
     alwaysHideButton: {
