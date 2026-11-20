@@ -26,6 +26,7 @@ function setup({ legacy, logs = memoryStore() } = {}) {
         currentId: () => me,
         myVoiceChannel: () => myRoom,
         channel: id => channels[id],
+        canSee: channel => !channel.private,
         name: id => `name-${id}`,
         roomDescription: channel => ({ place: "Guild", roomName: channel.name, guildId: channel.guild_id })
     };
@@ -144,4 +145,13 @@ test("the log narrows by server, person and date range", async () => {
     assert.deepEqual(keys({ since: "2026-10-22T00:00", until: "2026-10-22T23:59" }), [2]);
     assert.deepEqual(keys({ server: "not-offered" }), [3, 2, 1]);
     assert.deepEqual(narrowLog(entries, { filter: "friends" }).servers, [[guild, "Guild"], [other, "Other"]]);
+});
+
+test("moves into rooms you can't see aren't logged", () => {
+    const { log, bridge } = setup();
+    const secret = "999999999999999990";
+    const original = bridge.channel;
+    bridge.channel = id => id === secret ? { id, guild_id: "1", name: "___hidden___", private: true } : original(id);
+    log.onUpdates([{ userId: "222222222222222222", channelId: secret, oldChannelId: null }]);
+    assert.ok(log.entries.every(entry => entry.to?.id !== secret));
 });

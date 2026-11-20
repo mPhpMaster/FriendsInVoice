@@ -9,7 +9,7 @@ import { ChannelStore, GuildStore, RelationshipStore, SelectedChannelStore, User
 
 import { settings } from ".";
 import { isQuiet } from "./notifications";
-import { describeChannel, displayName } from "./voiceContent";
+import { canSeeChannel, describeChannel, displayName } from "./voiceContent";
 
 export type LogKind = "join" | "leave" | "move" | "friend-request" | "friend-added" | "friend-removed" | "server-removed";
 
@@ -178,7 +178,7 @@ export function onGuildDelete(guild: { id: string; unavailable?: boolean; }) {
 function snapshot(channelId: string | null): LogRoom | null {
     if (!channelId) return null;
     const channel = ChannelStore.getChannel(channelId);
-    if (!channel) return null;
+    if (!canSeeChannel(channel)) return null;
     return { id: channel.id, guildId: channel.guild_id ?? null, ...describeChannel(channel) };
 }
 

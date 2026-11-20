@@ -90,6 +90,7 @@ module.exports = class FriendsInVoice {
         for (const unsubscribe of this.unsubscribers.splice(0).reverse()) {
             try { unsubscribe?.(); } catch (error) { this.api.Logger.error("Cleanup failed", error); }
         }
+        this.autoStatus?.cancel();
         this.guards?.stop();
         this.voiceLog?.stop();
         this.view?.stop();

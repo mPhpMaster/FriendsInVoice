@@ -40,16 +40,22 @@ export function renderVoiceTab(parent, view) {
     renderHidden(parent, view);
 }
 
+/** the Hidden list shows this many people until you click "Show all" */
+export const HIDDEN_PREVIEW = 3;
+
 function renderHidden(parent, view) {
     const ids = view.data.value.hidden;
     if (!ids.length) return;
     add(parent, element("h3", "", `🙈 Hidden (${ids.length})`),
         paragraph("These people don't show up in In Voice. Show someone again here, or right-click them → Show in In Voice.", "fivbd-muted"));
     const list = element("div", "fivbd-grid");
-    for (const id of ids) {
+    const shown = view.showAllHidden ? ids : ids.slice(0, HIDDEN_PREVIEW);
+    for (const id of shown) {
         const row = element("div", "fivbd-person");
         add(row, element("span", "", view.bridge.name(id)), button("Show", () => { view.data.toggleList("hidden", id); view.render(); }));
         list.append(row);
     }
+    if (ids.length > HIDDEN_PREVIEW)
+        list.append(button(view.showAllHidden ? "Show less" : `Show all (${ids.length})`, () => { view.showAllHidden = !view.showAllHidden; view.render(); }));
     parent.append(list);
 }

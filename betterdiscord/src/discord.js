@@ -119,6 +119,21 @@ export class DiscordBridge {
         return messages.filter(message => message.content?.trim()).slice(-8)
             .map(message => ({ mine: message.author?.id === this.currentId(), content: message.content.slice(0, 500) }));
     }
+    /** server voice rooms you can't see (no View Channel) are left out everywhere: lists, the Log and alerts */
+    canSee(channel) {
+        if (!channel) return false;
+        if (!channel.guild_id) return true;
+        if (channel.name === "___hidden___" || (channel.flags & CHANNEL_OBFUSCATED)) return false;
+        return !!this.permissionStore.can(VIEW_CHANNEL, channel);
+    }
+    /** the voice room someone is in, or null when they aren't in one you can see */
+    visibleVoiceChannel(id) {
+        const channelId = this.voiceChannel(id);
+        return channelId && this.canSee(this.channel(channelId)) ? channelId : null;
+    }
+    currentStatus() {
+        try { return this.findStatusSetting().getSetting?.(); } catch { return undefined; }
+    }
     roomDescription(channel) {
         const guild = channel.guild_id && this.guildStore?.getGuild?.(channel.guild_id);
         // Discord sends channels you can't view as "___hidden___" with the CHANNEL_OBFUSCATED flag (1 << 17)
@@ -144,7 +159,7 @@ export class DiscordBridge {
         for (const [channelId, members] of byChannel) {
             if (!members.some(state => state.userId !== me && tracked.has(state.userId))) continue;
             const channel = this.channel(channelId);
-            if (!channel) continue;
+            if (!this.canSee(channel)) continue;
             const info = this.roomDescription(channel);
             result.push({ channelId, ...info, blocker: this.joinBlocker(channel),
                 members: members.map(state => ({

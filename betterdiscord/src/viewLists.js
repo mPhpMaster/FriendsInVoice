@@ -44,7 +44,7 @@ function renderSection(parent, view, definition) {
     const grid = element("div", "fivbd-grid");
     for (const id of ids) {
         const card = element("section", "fivbd-card");
-        const room = bridge.voiceChannel(id);
+        const room = bridge.visibleVoiceChannel(id);
         const channel = room && bridge.channel(room);
         add(card, heading(bridge.name(id)), paragraph(`@${bridge.user(id)?.username ?? id} · ${bridge.status(id)}`),
             paragraph(channel ? `${bridge.roomDescription(channel).roomName} · ${bridge.roomDescription(channel).place}` : "Not in a visible voice room"));

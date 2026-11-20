@@ -19,6 +19,7 @@ import { GUARD_ACTIONS, GUARD_LABELS, GUARD_VERBS, makeCommand, newGuardNonce } 
 import { guardClient, refreshGuardPairs, setGuardCommandHandler, updateGuardListening } from "./personalGuardsServer";
 import { writeGuardSetting } from "./personalGuardsSettings";
 import type { GuardAction, GuardEvent, GuardsStore } from "./personalGuardsTypes";
+import { settings } from "./pluginSettings";
 
 export type { GuardEvent, GuardsStore } from "./personalGuardsTypes";
 
@@ -243,12 +244,35 @@ export async function handleServerCommand(store: GuardsStore, event: ServerEvent
     if (rejection) { sendError(`Guard command rejected: ${rejection}`); return; }
     try { reserveGuardCommand(store, payload, senderId, Date.now()); }
     catch { sendError("The command receipt could not be saved. No voice action was applied."); return; }
-    let undo: (() => void) | null;
-    try { undo = await applyAction(payload.action); } catch { sendError("Discord could not apply the requested voice action."); return; }
-    if (!undo) { sendError("Discord voice controls are unavailable for this action."); return; }
-    const guardEvent = { id: key, guardianId: senderId, action: payload.action, undo };
+    if (settings.store.autoAllowGuardCommands) {
+        const undo = await runAction(payload.action);
+        if (!undo) return;
+        const guardEvent: GuardEvent = { id: key, guardianId: senderId, action: payload.action, undo };
+        for (const listener of eventListeners) listener(guardEvent);
+        if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`, body: `${GUARD_LABELS[payload.action]} applied. Click to undo.`, permanent: true, onClick: undo });
+        return;
+    }
+    // Ask first: nothing changes on your account until you click Allow yourself.
+    const expiresAt = Date.now() + GUARD_REQUEST_TTL;
+    let answered = false;
+    const allow = async () => {
+        if (answered || Date.now() > expiresAt) return null;
+        answered = true;
+        if (!sharesVoice(senderId)) { sendError("You're no longer in the same voice channel."); return null; }
+        return runAction(payload.action);
+    };
+    const guardEvent: GuardEvent = { id: key, guardianId: senderId, action: payload.action, allow, expiresAt };
     for (const listener of eventListeners) listener(guardEvent);
-    if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`, body: `${GUARD_LABELS[payload.action]} applied. Click to undo.`, permanent: true, onClick: undo });
+    if (!eventListeners.size) showNotification({ title: `Personal Guard: ${guardDisplayName(senderId)}`, body: `Wants to ${GUARD_VERBS[payload.action].toLowerCase()} you. Click to allow.`, onClick: () => void allow() });
+}
+
+const GUARD_REQUEST_TTL = 60_000;
+
+async function runAction(action: GuardAction): Promise<(() => void) | null> {
+    let undo: (() => void) | null;
+    try { undo = await applyAction(action); } catch { sendError("Discord could not apply the requested voice action."); return null; }
+    if (!undo) sendError("Discord voice controls are unavailable for this action.");
+    return undo;
 }
 
 export function installGuardCommandHandler(store: GuardsStore) {

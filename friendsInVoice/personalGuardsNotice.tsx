@@ -14,6 +14,11 @@ import type { GuardAction } from "./personalGuardsTypes";
 
 const cl = classNameFactory("vc-fiv-");
 const BLOCK_MINUTES = [5, 15, 30, 60, 120];
+const ASK_TEXT: Record<GuardAction, string> = {
+    mute: "wants to mute your microphone.",
+    deafen: "wants to deafen you.",
+    disconnect: "wants to disconnect you from voice.",
+};
 const NOTICE_TEXT: Record<GuardAction, string> = {
     mute: "muted your microphone.",
     deafen: "deafened you.",
@@ -23,6 +28,16 @@ const NOTICE_TEXT: Record<GuardAction, string> = {
 function Notice({ event, store, dismiss }: { event: GuardEvent; store: GuardsStore; dismiss(): void; }) {
     const [minutes, setMinutes] = useState(15);
     const [blocked, setBlocked] = useState(false);
+    const [undo, setUndo] = useState<(() => void) | undefined>(() => event.undo);
+    const [busy, setBusy] = useState(false);
+    const asking = !undo;
+
+    // an unanswered request goes away on its own
+    useEffect(() => {
+        if (!asking || !event.expiresAt) return;
+        const timer = setTimeout(dismiss, Math.max(0, event.expiresAt - Date.now()));
+        return () => clearTimeout(timer);
+    }, [asking]);
 
     const user = UserStore.getUser(event.guardianId);
 
@@ -33,9 +48,15 @@ function Notice({ event, store, dismiss }: { event: GuardEvent; store: GuardsSto
                 <span className={cl("guard-notice-title")}>🛡️ Personal Guard</span>
                 <button className={cl("guard-notice-close")} onClick={dismiss} aria-label="Dismiss notification">✕</button>
             </div>
-            <p className={cl("guard-notice-text")}><strong>{guardDisplayName(event.guardianId)}</strong> {NOTICE_TEXT[event.action]}</p>
+            <p className={cl("guard-notice-text")}><strong>{guardDisplayName(event.guardianId)}</strong> {asking ? ASK_TEXT[event.action] : NOTICE_TEXT[event.action]}</p>
             <div className={cl("guard-notice-actions")}>
-                <Button size="small" variant="primary" onClick={() => { event.undo(); dismiss(); }}>Undo</Button>
+                {asking
+                    ? <Button size="small" variant="primary" disabled={busy} onClick={async () => {
+                        setBusy(true);
+                        const result = await event.allow?.();
+                        if (result) setUndo(() => result); else dismiss();
+                    }}>Allow</Button>
+                    : <Button size="small" variant="primary" onClick={() => { undo!(); dismiss(); }}>Undo</Button>}
                 <select aria-label="Block for" value={minutes} disabled={blocked} onChange={e => setMinutes(Number(e.currentTarget.value))}>
                     {BLOCK_MINUTES.map(value => <option key={value} value={value}>{value} min</option>)}
                 </select>

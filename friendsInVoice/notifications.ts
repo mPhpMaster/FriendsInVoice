@@ -7,15 +7,15 @@
 import { showNotification } from "@api/Notifications";
 import { getUserSettingLazy } from "@api/UserSettings";
 import type { PluginNative } from "@utils/types";
-import { ChannelStore, PresenceStore, showToast, UserStore, VoiceStateStore } from "@webpack/common";
+import { ChannelStore, PresenceStore, showToast, UserStore } from "@webpack/common";
 
 import { openPageFor,openPrivateChannel, setPageOpen, settings } from ".";
 import type { UpdateStatus } from "./updateTypes";
 import { isNewer } from "./updateVersion";
-import { describeChannel, displayName } from "./voiceContent";
+import { canSeeChannel, describeChannel, displayName, visibleVoiceChannelId } from "./voiceContent";
 import { seedVoiceLog } from "./voiceLog";
 const StatusSettings = getUserSettingLazy<string>("status", "status")!;
-const VERSION = "1.19.0";
+const VERSION = "1.20.0";
 const REPO = "mPhpMaster/FriendsInVoice";// ---------- lists ----------
 const UpdateNative = VencordNative.pluginHelpers.FriendsInVoice as PluginNative<typeof import("./native")>;
 
@@ -29,7 +29,7 @@ export function toggleInList(key: ListKey, id: string) {
     const list = settings.store[key];
     settings.store[key] = list.includes(id) ? list.filter(x => x !== id) : [...list, id];
     if (key === "notifyOnline" || key === "blacklist") lastStatus.set(id, PresenceStore.getStatus(id));
-    if (key === "notifyVoice") lastVoiceChannel.set(id, VoiceStateStore.getVoiceStateForUser(id)?.channelId ?? null);
+    if (key === "notifyVoice") lastVoiceChannel.set(id, visibleVoiceChannelId(id));
 }
 
 // ---------- voice join notifications ----------
@@ -39,7 +39,7 @@ const lastVoiceChannel = new Map<string, string | null>();
 export function seedVoiceChannels() {
     lastVoiceChannel.clear();
     for (const id of settings.store.notifyVoice) {
-        lastVoiceChannel.set(id, VoiceStateStore.getVoiceStateForUser(id)?.channelId ?? null);
+        lastVoiceChannel.set(id, visibleVoiceChannelId(id));
     }
 }
 
@@ -64,7 +64,8 @@ export function onVoiceStateUpdates(voiceStates: { userId: string; channelId?: s
     for (const s of voiceStates) {
         if (!list.includes(s.userId)) continue;
 
-        const now = s.channelId ?? null;
+        // a room you can't see counts as "not in voice"
+        const now = s.channelId && canSeeChannel(ChannelStore.getChannel(s.channelId)) ? s.channelId : null;
         const prev = lastVoiceChannel.get(s.userId);
         lastVoiceChannel.set(s.userId, now);
 
