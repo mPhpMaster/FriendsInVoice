@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.21.0
+ * @version 1.22.0
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -676,6 +676,18 @@ var GuardServerClient = class {
   showCode(code) {
     return this.call("GET", `/v1/codes/${code}`);
   }
+  /** whether this device proved (with Discord's login page) that it belongs to its Discord account */
+  me() {
+    return this.call("GET", "/v1/me");
+  }
+  /** the Discord login link that proves this device's account; nothing changes until you approve it there */
+  startVerification() {
+    return this.call("POST", "/v1/oauth/start");
+  }
+  /** open invites this person made for you (verified accounts only) */
+  incomingCodes(ownerId) {
+    return this.call("GET", `/v1/codes/incoming?from=${encodeURIComponent(ownerId)}`);
+  }
   acceptCode(code) {
     return this.call("POST", `/v1/codes/${code}/accept`);
   }
@@ -1099,6 +1111,32 @@ var GuardService = class {
       return null;
     }
   }
+  /** Opens Discord's own login page, so the server knows this device really is your account */
+  async verify() {
+    try {
+      const { url } = await this.client.startVerification();
+      if (!/^https:\/\/discord\.com\/(api\/)?oauth2\/authorize\?/.test(url)) throw new Error("The server sent an unexpected login link.");
+      window.open(url, "_blank", "noopener,noreferrer");
+      this.api.UI.showToast("Approve it in your browser, then check again.", { type: "info" });
+    } catch (error) {
+      this.error(error);
+    }
+  }
+  /** right-click → Check Personal Guard invite: one request to the Friends in Voice server, none to Discord */
+  async checkInviteFrom(id) {
+    try {
+      const offer = (await this.client.incomingCodes(id)).find((item) => item.ownerId === id && item.expiresAt > Date.now());
+      if (!offer) this.api.UI.showToast(`No open Personal Guard invite from ${this.bridge.name(id)}.`, { type: "info" });
+      return offer ?? null;
+    } catch (error) {
+      if (error instanceof GuardServerError && error.status === 403 && /verif/i.test(error.message)) {
+        this.api.UI.showNotice("To look up invites by person, prove this Discord account is yours once on Discord's own login page.", {
+          buttons: [{ label: "Verify with Discord", onClick: () => void this.verify() }]
+        });
+      } else this.error(error);
+      return null;
+    }
+  }
   async decide(code, accept) {
     try {
       if (accept) {
@@ -1245,6 +1283,18 @@ function installUserMenu(api, view) {
       const known = view.guards.knownFor(id);
       const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter((action) => known.includes(action)) : [];
       const guardItems = [
+        {
+          id: "fivbd-check-invite",
+          label: "Check Personal Guard invite",
+          action: async () => {
+            const offer = await view.guards.checkInviteFrom(id);
+            if (offer) api.UI.showConfirmationModal?.(
+              `Become ${view.bridge.name(id)}'s Personal Guard?`,
+              `While you're both in the same voice channel you'll be able to: ${offer.actions.map((action) => GUARD_LABELS[action]).join(" \xB7 ")}`,
+              { confirmText: "Accept", cancelText: "Not now", onConfirm: () => void view.guards.decide(offer.code, true) }
+            );
+          }
+        },
         {
           id: "fivbd-add-guardian",
           label: view.data.value.personalGuards.some((item) => item.userId === id) ? "Manage guardian" : "Add as Guardian",

@@ -134,6 +134,38 @@ export async function lookupGuardCode(raw: string): Promise<CodeOffer & { code: 
     catch (error) { sendError(failure(error, "This code can't be used.")); return null; }
 }
 
+/** the server answered "verify first": this device hasn't proved it belongs to its Discord account yet */
+export const needsVerification = (error: unknown) => error instanceof GuardServerError && error.status === 403 && /verif/i.test(error.message);
+
+/** Opens Discord's own login page, so the server knows this device really is your account. */
+export async function verifyGuardAccount() {
+    try {
+        const { url } = await guardClient.startVerification();
+        if (!/^https:\/\/discord\.com\/(api\/)?oauth2\/authorize\?/.test(url)) throw new Error("The server sent an unexpected login link.");
+        VencordNative.native.openExternal(url);
+        showToast({ text: "Approve it in your browser, then check again.", variant: "success" });
+    } catch (error) { sendError(failure(error, "Could not start the Discord login.")); }
+}
+
+/** Right-click → Check guard invite: one request to the Friends in Voice server, none to Discord. */
+export async function checkGuardInviteFrom(ownerId: string): Promise<(CodeOffer & { code: string; }) | null> {
+    try {
+        const codes = await guardClient.incomingCodes(ownerId);
+        const offer = codes.find(item => item.ownerId === ownerId && item.expiresAt > Date.now());
+        if (!offer) showToast({ text: `No open Personal Guard invite from ${guardDisplayName(ownerId)}.`, variant: "default" });
+        return offer ?? null;
+    } catch (error) {
+        if (needsVerification(error)) {
+            showNotification({
+                title: "Personal Guards: verify your account once",
+                body: "To look up invites by person, prove this Discord account is yours on Discord's own login page. Click to open it.",
+                onClick: () => void verifyGuardAccount(),
+            });
+        } else sendError(failure(error, "Could not check for an invite."));
+        return null;
+    }
+}
+
 export async function decideGuardCode(code: string, accept: boolean): Promise<boolean> {
     try {
         if (accept) {

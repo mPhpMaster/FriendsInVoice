@@ -10,6 +10,7 @@ import { Menu, showToast, UserStore } from "@webpack/common";
 
 import { inList, selfMenuItems, settings, toggleInList } from ".";
 import { refreshName } from "./nameCache";
+import { checkGuardInvite } from "./personalGuardsCodes";
 import { openGuardModal } from "./personalGuardsModal";
 import { GUARD_ACTIONS, GUARD_VERBS } from "./personalGuardsProtocol";
 import { guardDisplayName, hasGuardKey, sendGuardCommand, sharesVoice } from "./personalGuardsRuntime";
@@ -50,6 +51,8 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
             action={async () => showToast(await refreshName(user.id)
                 ? { text: "Name updated.", variant: "success" }
                 : { text: "Couldn't get the name from Discord.", variant: "critical" })} />
+        <Menu.MenuItem id="vc-fiv-check-guard-invite" label="Check Personal Guard invite"
+            action={() => void checkGuardInvite(user.id)} />
         <Menu.MenuItem id="vc-fiv-personal-guards" label={isGuardian ? "Personal Guard settings…" : "Make Personal Guard…"}
             action={() => openGuardModal(user.id)} />
     </Menu.MenuGroup>);

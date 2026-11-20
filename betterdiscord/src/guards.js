@@ -116,6 +116,30 @@ export class GuardService {
         try { return { code, ...await this.client.showCode(code) }; }
         catch (error) { this.error(error); return null; }
     }
+    /** Opens Discord's own login page, so the server knows this device really is your account */
+    async verify() {
+        try {
+            const { url } = await this.client.startVerification();
+            if (!/^https:\/\/discord\.com\/(api\/)?oauth2\/authorize\?/.test(url)) throw new Error("The server sent an unexpected login link.");
+            window.open(url, "_blank", "noopener,noreferrer");
+            this.api.UI.showToast("Approve it in your browser, then check again.", { type: "info" });
+        } catch (error) { this.error(error); }
+    }
+    /** right-click → Check Personal Guard invite: one request to the Friends in Voice server, none to Discord */
+    async checkInviteFrom(id) {
+        try {
+            const offer = (await this.client.incomingCodes(id)).find(item => item.ownerId === id && item.expiresAt > Date.now());
+            if (!offer) this.api.UI.showToast(`No open Personal Guard invite from ${this.bridge.name(id)}.`, { type: "info" });
+            return offer ?? null;
+        } catch (error) {
+            if (error instanceof GuardServerError && error.status === 403 && /verif/i.test(error.message)) {
+                this.api.UI.showNotice("To look up invites by person, prove this Discord account is yours once on Discord's own login page.", {
+                    buttons: [{ label: "Verify with Discord", onClick: () => void this.verify() }]
+                });
+            } else this.error(error);
+            return null;
+        }
+    }
     async decide(code, accept) {
         try {
             if (accept) {

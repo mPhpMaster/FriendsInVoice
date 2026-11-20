@@ -170,6 +170,12 @@ export class GuardServerClient {
         return this.call<{ code: string; expiresAt: number; }>("POST", "/v1/codes", { guardianId, actions, nonce });
     }
     showCode(code: string) { return this.call<CodeOffer>("GET", `/v1/codes/${code}`); }
+    /** whether this device proved (with Discord's login page) that it belongs to its Discord account */
+    me() { return this.call<{ discordId: string; verified: boolean; }>("GET", "/v1/me"); }
+    /** the Discord login link that proves this device's account; nothing changes until you approve it there */
+    startVerification() { return this.call<{ url: string; }>("POST", "/v1/oauth/start"); }
+    /** open invites this person made for you (verified accounts only) */
+    incomingCodes(ownerId: string) { return this.call<(CodeOffer & { code: string; })[]>("GET", `/v1/codes/incoming?from=${encodeURIComponent(ownerId)}`); }
     acceptCode(code: string) { return this.call<ServerPair>("POST", `/v1/codes/${code}/accept`); }
     refuseCode(code: string) { return this.call("POST", `/v1/codes/${code}/refuse`); }
     cancelCode(code: string) { return this.call("DELETE", `/v1/codes/${code}`); }
