@@ -184,15 +184,32 @@ export class GuardService {
         try { await this.data.accounts.put(me, Object.fromEntries(ACCOUNT_KEYS.map(key => [key, this.data.value[key]]))); }
         catch { return this.error("Could not save the command receipt. Nothing was changed."); }
         if (this.current() !== me) return;
-        const undo = this.bridge.applyGuardAction(payload.action);
-        if (!undo) return this.error("Discord's voice action is unavailable. Nothing was changed.");
-        this.api.UI.showNotice(`${this.bridge.name(sender)} applied ${GUARD_LABELS[payload.action]} to your account.`, { buttons: [
-            { label: "Undo", onClick: () => { if (this.current() === me) undo(); } },
-            { label: "Block 15 minutes", onClick: () => {
-                if (this.current() !== me) return;
-                this.data.value.guardBlocks = [...this.data.value.guardBlocks.filter(item => item.userId !== sender), { userId: sender, until: Date.now() + 15 * 60_000 }];
-                this.data.save();
-            } }
+        const block = { label: "Block 15 minutes", onClick: () => {
+            if (this.current() !== me) return;
+            this.data.value.guardBlocks = [...this.data.value.guardBlocks.filter(item => item.userId !== sender), { userId: sender, until: Date.now() + 15 * 60_000 }];
+            this.data.save();
+        } };
+        const run = () => {
+            const undo = this.bridge.applyGuardAction(payload.action);
+            if (!undo) { this.error("Discord's voice action is unavailable. Nothing was changed."); return; }
+            this.api.UI.showNotice(`${this.bridge.name(sender)} applied ${GUARD_LABELS[payload.action]} to your account.`, { buttons: [
+                { label: "Undo", onClick: () => { if (this.current() === me) undo(); } }, block
+            ] });
+        };
+        if (this.data.value.autoAllowGuardCommands) return run();
+        // Ask first: nothing changes on your account until you click Allow yourself, within a minute.
+        const expiresAt = Date.now() + GUARD_REQUEST_TTL;
+        let answered = false;
+        this.api.UI.showNotice(`${this.bridge.name(sender)} wants to use ${GUARD_LABELS[payload.action]} on your account.`, { timeout: GUARD_REQUEST_TTL, buttons: [
+            { label: "Allow", onClick: () => {
+                if (answered || Date.now() > expiresAt || this.current() !== me) return;
+                answered = true;
+                if (!this.bridge.sharesVoice(sender)) return this.error("You're no longer in the same voice channel.");
+                run();
+            } }, block
         ] });
     }
 }
+
+/** a guard request nobody answered stops working after this long */
+export const GUARD_REQUEST_TTL = 60_000;

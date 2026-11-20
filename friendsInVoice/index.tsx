@@ -17,7 +17,7 @@ import definePlugin from "@utils/types";
 import { ChannelActionCreators, ChannelStore, ContextMenuApi, Menu, PresenceStore, React, ReactDOM, RelationshipStore, SelectedChannelStore, SelectedGuildStore, Tooltip, useEffect, useReducer, UserStore, useState, useStateFromStores, VoiceStateStore } from "@webpack/common";
 
 import { leaveAccount, loadAccount, startAccountData, stopAccountData } from "./accountData";
-import { applyAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
+import { applyAutoStatus, cancelAutoStatus, onAutoStatusVoiceUpdates, statusOptions } from "./autoStatus";
 import { codeFromText } from "./guardServer";
 import { checkForUpdate, onPresenceChange, onVoiceStateUpdates, seedStatuses, seedVoiceChannels, startQuietPeriod, startUpdateTimer, stopUpdateTimer } from "./notifications";
 import { GuardCodeCard } from "./personalGuardsCodes";
@@ -28,8 +28,9 @@ import { startGuardServer, stopGuardServer, updateGuardListening } from "./perso
 import { PersonalGuardsTab } from "./personalGuardsTab";
 import { settings } from "./pluginSettings";
 import { SmartReplies } from "./smartReplies";
+import { startStayInVoiceLimit, stopStayInVoiceLimit } from "./stayInVoice";
 import { UserContextPatch } from "./userContextMenu";
-import { useVoiceData } from "./voiceContent";
+import { useVoiceData, visibleVoiceChannelId } from "./voiceContent";
 import { flushVoiceLog, onGuildDelete, onGuildUpdate, onRelationshipAdd, onRelationshipRemove, onVoiceLogUpdates, seedVoiceLog } from "./voiceLog";
 import { LogTab, useLog } from "./voiceLogTab";
 import { AlertsTab, MyListTab, RunAwayTab, VoiceTab, WatchedCard } from "./voiceTabs";
@@ -38,7 +39,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.19.0";
+const VERSION = "1.20.0";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -246,7 +247,7 @@ function ServerListButton() {
     const count = useStateFromStores([VoiceStateStore, RelationshipStore], () => {
         let n = 0;
         for (const id of RelationshipStore.getFriendIDs()) {
-            if (!hidden.includes(id) && VoiceStateStore.getVoiceStateForUser(id)?.channelId) n++;
+            if (!hidden.includes(id) && visibleVoiceChannelId(id)) n++;
         }
         return n;
     }, [hidden]);
@@ -280,7 +281,7 @@ function ServerListButton() {
 type AwayKey = "stayInVoice" | "neverIdle";
 
 const AWAY_OPTIONS: Record<AwayKey, { label: string; builtIn: string; }> = {
-    stayInVoice: { label: "Stay in voice when away", builtIn: "DisableCallIdle" },
+    stayInVoice: { label: "Stay in voice when away (up to 2 hours)", builtIn: "DisableCallIdle" },
     neverIdle: { label: "Never go idle", builtIn: "CustomIdle" },
 };
 
@@ -456,6 +457,7 @@ export default definePlugin({
 
         loadedAway.stayInVoice = settings.store.stayInVoice;
         loadedAway.neverIdle = settings.store.neverIdle;
+        if (loadedAway.stayInVoice && !isPluginEnabled("DisableCallIdle")) startStayInVoiceLimit();
         startQuietPeriod();
         seedStatuses();
         seedVoiceChannels();
@@ -475,6 +477,8 @@ export default definePlugin({
     },
 
     stop() {
+        stopStayInVoiceLimit();
+        cancelAutoStatus();
         stopGuardServer();
         stopAccountData();
         flushVoiceLog();
