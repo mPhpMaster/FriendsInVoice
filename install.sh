@@ -149,6 +149,8 @@ patched_vencord_dir() {
     local res="$1" asar
     [ -n "$res" ] || return 0
     asar="$res/app.asar"
+    # a patched app.asar is a folder holding index.js
+    [ -d "$asar" ] && asar="$asar/index.js"
     [ -f "$asar" ] || return 0
     LC_ALL=C grep -aoE '/[^"'"'"'`]+/dist/patcher\.js' "$asar" 2>/dev/null | head -n 1 | sed 's#/dist/patcher\.js$##' || true
 }

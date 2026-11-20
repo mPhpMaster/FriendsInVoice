@@ -8,6 +8,7 @@ const SWITCHES = [
     ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
     ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
     ["autoStatus", "Auto switch status: change your status when you join or leave a call"],
+    ["hideButton", "Hide the Friends In Voice button (Shift + F12 shows or hides it)"],
     ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
 ];
 const STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
@@ -25,6 +26,7 @@ export function settingsPanel(view) {
         input.addEventListener("change", () => {
             view.data.set(key, input.checked);
             if (key === "autoStatus") view.autoStatus?.apply();
+            if (key === "hideButton" && view.launcher) view.launcher.hidden = input.checked;
             view.render();
         });
         add(label, input, element("span", "", title));

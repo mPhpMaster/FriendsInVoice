@@ -83,7 +83,14 @@ function Get-PatchedVencordDir {
     if (-not $app) { return $null }
     $asar = Join-Path $app.FullName "resources\app.asar"
     if (-not (Test-Path $asar)) { return $null }
-    $text = [IO.File]::ReadAllText($asar)
+    # A patched app.asar is a folder holding index.js, not a file; reading the folder fails with "access denied"
+    if (Test-Path $asar -PathType Container) { $asar = Join-Path $asar "index.js" }
+    if (-not (Test-Path $asar -PathType Leaf)) { return $null }
+    try {
+        # Discord may be running and holding the file open
+        $stream = [IO.File]::Open($asar, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+        try { $text = (New-Object IO.StreamReader($stream)).ReadToEnd() } finally { $stream.Dispose() }
+    } catch { return $null }
     $m = [regex]::Match($text, '([A-Za-z]:(?:\\\\[^"\\]+)+?)\\\\dist\\\\patcher\.js')
     if (-not $m.Success) { return $null }
     return $m.Groups[1].Value -replace '\\\\', '\'
