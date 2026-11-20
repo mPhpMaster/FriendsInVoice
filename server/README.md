@@ -6,7 +6,7 @@ Node.js 18 or newer, no dependencies. State is one JSON file.
 
 ```sh
 node start.mjs                 # PORT=3077 HOST=127.0.0.1 DATA_FILE=./data/guards.json
-node --test test/              # tests
+node --test test/server.test.mjs  # tests
 ```
 
 Put it behind HTTPS (the plugin refuses plain `http://` except for localhost). Long polls wait up to 25 seconds, so the proxy timeout must be longer. `deploy/` has the systemd unit, the Apache include and the install script used for `friendsinvoice.sarhsoft.com` on cPanel.
