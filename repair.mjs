@@ -142,8 +142,10 @@ const isVencord = dir => !!dir && readPackage(dir)?.name === "vencord";
 
 function patchedVencordDir(branch) {
     for (const dir of discordResourceDirs(process.platform, branch)) {
-        const asar = join(dir, "app.asar");
+        let asar = join(dir, "app.asar");
         if (!existsSync(asar)) continue;
+        // a patched app.asar is a folder holding index.js
+        try { if (statSync(asar).isDirectory()) asar = join(asar, "index.js"); } catch { continue; }
         try { return vencordDirFromAsar(readFileSync(asar, "latin1"), process.platform); } catch { return null; }
     }
     return null;
