@@ -6,6 +6,6 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "start": "node start.mjs",
-    "test": "node --test test/server.test.mjs test/admin.test.mjs"
+    "test": "node --test test/server.test.mjs test/admin.test.mjs test/site.test.mjs"
   }
 }

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Friends in Voice — تثبيت</title>
+<meta name="description" content="Friends in Voice: صفحة تشوف فيها أصحابك بأي روم صوتي، مع تنبيهات وحرّاس شخصيين. إضافة لـ Vencord و BetterDiscord.">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>🔊 Friends in Voice</h1>
+    <p>صفحة تشوف فيها أصحابك بأي روم صوتي ومين معهم، وتدخل عندهم بضغطة. فيها كمان تنبيهات، وقائمة Run away، وسجل، والحرّاس الشخصيين.</p>
+  </header>
+
+  <section class="card">
+    <h2>Windows (Vencord)</h2>
+    <p>نزّل المثبّت وافتحه. هو يجيب آخر إصدار، ويثبّت Vencord إذا ما كان عندك، ويضيف الإضافة.</p>
+    <a class="button" href="/FriendsInVoice-Installer.bat" download>⬇️ تحميل المثبّت (Windows)</a>
+    <p class="muted">أو الصق هذا الأمر في PowerShell:</p>
+    <pre dir="ltr"><code>irm https://friendsinvoice.sarhsoft.com/install.ps1 | iex</code></pre>
+    <p class="muted">Windows ممكن يحذّرك لأن الملف غير موقّع: اضغط «More info» ثم «Run anyway».</p>
+  </section>
+
+  <section class="card">
+    <h2>macOS و Linux (Vencord)</h2>
+    <p>افتح Terminal والصق:</p>
+    <pre dir="ltr"><code>curl -fsSL https://friendsinvoice.sarhsoft.com/install.sh | bash</code></pre>
+  </section>
+
+  <section class="card">
+    <h2>BetterDiscord</h2>
+    <p>نزّل ملف الإضافة وحطه في مجلد الإضافات حق BetterDiscord، وبعدين فعّلها.</p>
+    <a class="button ghost" href="https://github.com/mPhpMaster/FriendsInVoice/releases/latest/download/FriendsInVoice.plugin.js">⬇️ FriendsInVoice.plugin.js</a>
+  </section>
+
+  <section class="card">
+    <h2>الأمان</h2>
+    <ul>
+      <li>الإضافة ما تسوي أي طلبات لديسكورد بالخلفية.</li>
+      <li>الحرّاس الشخصيين يتربطون بكود، والأوامر مشفّرة من طرف لطرف عبر هذا السيرفر. ما ينرسل أي توكن ديسكورد.</li>
+      <li>المثبّت ينزّل الإصدار من <a href="https://github.com/mPhpMaster/FriendsInVoice/releases/latest">صفحة الإصدارات في GitHub</a>، والكود كله مفتوح.</li>
+    </ul>
+  </section>
+
+  <footer class="muted"><a href="https://github.com/mPhpMaster/FriendsInVoice">GitHub</a> · Friends in Voice</footer>
+</main>
+</body>
+</html>

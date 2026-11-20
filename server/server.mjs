@@ -358,7 +358,7 @@ export function createStats(now = Date.now) {
     return { request: () => bump("requests"), error: () => bump("errors"), lastHour: () => sum("requests"), errorsLastHour: () => sum("errors") };
 }
 
-export function createApp({ store = new GuardStore(null), version = "dev", admin, stats = createStats() } = {}) {
+export function createApp({ store = new GuardStore(null), version = "dev", admin, site, stats = createStats() } = {}) {
     const registerLimit = new RateLimiter(20, 60 * 60_000);
     const requestLimit = new RateLimiter(120, 60_000);
     const codeLimit = new RateLimiter(20, 10 * 60_000);
@@ -368,7 +368,7 @@ export function createApp({ store = new GuardStore(null), version = "dev", admin
     async function route(request, url, signal) {
         const { pathname } = url;
         const method = request.method;
-        if (method === "GET" && (pathname === "/" || pathname === "/health")) return { ok: true, service: "FriendsInVoice Personal Guards", version };
+        if (method === "GET" && pathname === "/health") return { ok: true, service: "FriendsInVoice Personal Guards", version };
         // behind Apache the last X-Forwarded-For entry is the one Apache added; earlier ones come from the client
         const ip = String(request.headers["x-forwarded-for"] ?? request.socket.remoteAddress ?? "").split(",").pop().trim();
         if (method === "POST" && pathname === "/v1/register") {
@@ -411,6 +411,7 @@ export function createApp({ store = new GuardStore(null), version = "dev", admin
             const url = new URL(request.url ?? "/", "http://localhost");
             const ip = String(request.headers["x-forwarded-for"] ?? request.socket.remoteAddress ?? "").split(",").pop().trim();
             if (admin && await admin(request, response, url, ip, readBody)) return;
+            if (site?.(request, response, url)) return;
             stats.request();
             body = await route(request, url, controller.signal);
         } catch (error) {
