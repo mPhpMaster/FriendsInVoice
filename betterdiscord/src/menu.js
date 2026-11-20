@@ -20,6 +20,15 @@ export function installUserMenu(api, view) {
             const available = view.bridge.sharesVoice(id) ? GUARD_ACTIONS.filter(action => known.includes(action)) : [];
             const guardItems = [
                 {
+                    id: "fivbd-check-invite", label: "Check Personal Guard invite",
+                    action: async () => {
+                        const offer = await view.guards.checkInviteFrom(id);
+                        if (offer) api.UI.showConfirmationModal?.(`Become ${view.bridge.name(id)}'s Personal Guard?`,
+                            `While you're both in the same voice channel you'll be able to: ${offer.actions.map(action => GUARD_LABELS[action]).join(" · ")}`,
+                            { confirmText: "Accept", cancelText: "Not now", onConfirm: () => void view.guards.decide(offer.code, true) });
+                    }
+                },
+                {
                     id: "fivbd-add-guardian",
                     label: view.data.value.personalGuards.some(item => item.userId === id) ? "Manage guardian" : "Add as Guardian",
                     action: () => {

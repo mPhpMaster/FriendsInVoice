@@ -13,7 +13,7 @@ import { Modal, openModal, React, UserStore, useState } from "@webpack/common";
 import { settings } from ".";
 import { codeFromText, type CodeOffer, formatCode } from "./guardServer";
 import { GUARD_LABELS, isGuardMessage } from "./personalGuardsProtocol";
-import { decideGuardCode, draftGuardCode, guardDisplayName, lookupGuardCode } from "./personalGuardsRuntime";
+import { checkGuardInviteFrom, decideGuardCode, draftGuardCode, guardDisplayName, lookupGuardCode } from "./personalGuardsRuntime";
 
 const cl = classNameFactory("vc-fiv-");
 
@@ -59,6 +59,11 @@ function OfferModal({ offer, modalProps }: { offer: CodeOffer & { code: string; 
             <p className={cl("guard-modal-note")}>They get a notice with Undo each time you use it, and they can remove you at any time.</p>
         </div>
     </Modal>;
+}
+
+export async function checkGuardInvite(ownerId: string) {
+    const offer = await checkGuardInviteFrom(ownerId);
+    if (offer) openModal(modalProps => <OfferModal offer={offer} modalProps={modalProps} />);
 }
 
 export async function openGuardCode(raw: string): Promise<boolean> {
