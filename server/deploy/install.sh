@@ -7,9 +7,22 @@ DOMAIN=friendsinvoice.sarhsoft.com
 INCLUDE_DIR=/etc/apache2/conf.d/userdata
 
 mkdir -p "$APP/data"
-install -m 644 "$SRC/server.mjs" "$SRC/start.mjs" "$SRC/package.json" "$APP/"
+install -m 644 "$SRC/server.mjs" "$SRC/start.mjs" "$SRC/admin.mjs" "$SRC/hash-password.mjs" "$SRC/package.json" "$APP/"
 chown -R sarhsoft:sarhsoft "$APP"
 chmod 700 "$APP/data"
+
+# dashboard password: made once, readable only by root. Delete both files and rerun to get a new one.
+PASSWORD_FILE=/root/friendsinvoice-admin-password.txt
+if [ ! -f /etc/friendsinvoice/admin.env ]; then
+    mkdir -p /etc/friendsinvoice
+    chmod 700 /etc/friendsinvoice
+    umask 077
+    /opt/node22/bin/node "$APP/hash-password.mjs" < /dev/null 2> "$PASSWORD_FILE.tmp" > /etc/friendsinvoice/admin.env
+    sed 's/^New admin password: //' "$PASSWORD_FILE.tmp" > "$PASSWORD_FILE"
+    rm -f "$PASSWORD_FILE.tmp"
+    chmod 600 /etc/friendsinvoice/admin.env "$PASSWORD_FILE"
+    echo "Admin password saved to $PASSWORD_FILE"
+fi
 
 install -m 644 "$SRC/friendsinvoice.service" /etc/systemd/system/friendsinvoice.service
 systemctl daemon-reload
