@@ -39,6 +39,10 @@ export class DiscordBridge {
             throw new Error("Discord stores or dispatcher are unavailable in this client build.");
     }
     currentId() { return this.userStore.getCurrentUser()?.id ?? null; }
+    currentProfile() {
+        const me = this.userStore.getCurrentUser();
+        return me ? { name: me.globalName ?? me.username, username: me.username } : undefined;
+    }
     user(id) { return this.userStore.getUser(id); }
     openProfile(id) {
         if (!this.profileActions?.openUserProfileModal) throw new Error("Discord's profile opener is unavailable.");

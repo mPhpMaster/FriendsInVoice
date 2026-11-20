@@ -67,6 +67,10 @@ module.exports = class FriendsInVoice {
             };
             this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
+            // you changed your own name or username; the server gets the new one
+            const onProfile = () => this.guards.syncProfile();
+            this.bridge.dispatcher.subscribe("CURRENT_USER_UPDATE", onProfile);
+            this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CURRENT_USER_UPDATE", onProfile));
             this.bridge.dispatcher.subscribe("LOGOUT", onLogout);
             this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("LOGOUT", onLogout));
             this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);

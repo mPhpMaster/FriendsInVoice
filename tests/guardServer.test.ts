@@ -106,3 +106,31 @@ test("the poller stops as soon as it isn't needed and backs off after errors", a
     assert.deepEqual(waits, [2000]);
     assert.deepEqual(seen, [1, 2, 3]);
 });
+
+test("your name and username go with sign-up, and again only when they change", async () => {
+    const requests: GuardRequest[] = [];
+    const saved = new Map<string, GuardCredential>();
+    let profile: { name?: string; username?: string; } | undefined = { name: " Mo ", username: "mo" };
+    const client = new GuardServerClient({
+        transport: async request => {
+            requests.push(request);
+            if (request.url.endsWith("/v1/register")) return { status: 200, body: { token: "t" } };
+            return { status: 200, body: { discordId: me, verified: false, me, pairs: [], codes: [] } };
+        },
+        credentials: { get: async id => saved.get(id), set: async (id, value) => { if (value) saved.set(id, value); else saved.delete(id); } },
+        server: () => "https://example.test", account: () => me, publicKey: async () => key("k"),
+        profile: () => profile,
+    });
+    assert.equal(await client.syncProfile(), false, "a device that never used the server isn't signed up for this");
+    assert.equal(requests.length, 0);
+    await client.listPairs();
+    assert.deepEqual(requests[0].body, { discordId: me, publicKey: key("k"), name: "Mo", username: "mo" });
+    assert.equal(await client.syncProfile(), false, "already sent at sign-up");
+    profile = { name: "Mohammad", username: "mo" };
+    assert.equal(await client.syncProfile(), true);
+    assert.deepEqual([requests.at(-1)?.method, requests.at(-1)?.url, requests.at(-1)?.body], ["PATCH", "https://example.test/v1/me", { name: "Mohammad", username: "mo" }]);
+    assert.equal(await client.syncProfile(), false);
+    profile = undefined;
+    assert.equal(await client.syncProfile(), false);
+    assert.equal(requests.filter(item => item.method === "PATCH").length, 1);
+});

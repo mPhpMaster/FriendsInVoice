@@ -2,7 +2,7 @@
  * @name FriendsInVoice
  * @author mPhpMaster
  * @description Voice rooms, friend alerts, encrypted Personal Guards, and smart DM replies for BetterDiscord.
- * @version 1.22.0
+ * @version 1.22.1
  * @website https://github.com/mPhpMaster/FriendsInVoice
  * @source https://github.com/mPhpMaster/FriendsInVoice
  */
@@ -382,6 +382,10 @@ var DiscordBridge = class {
   currentId() {
     return this.userStore.getCurrentUser()?.id ?? null;
   }
+  currentProfile() {
+    const me = this.userStore.getCurrentUser();
+    return me ? { name: me.globalName ?? me.username, username: me.username } : void 0;
+  }
   user(id) {
     return this.userStore.getUser(id);
   }
@@ -625,6 +629,12 @@ function serverUrl(value) {
     throw new GuardServerError(0, "The Personal Guards server address must start with https://.");
   return url;
 }
+var clip = (value) => typeof value === "string" && value.trim() ? value.trim().slice(0, 64) : void 0;
+function cleanProfile(profile) {
+  const name = clip(profile?.name), username = clip(profile?.username);
+  if (!name && !username) return void 0;
+  return { ...name ? { name } : {}, ...username ? { username } : {} };
+}
 var GuardServerClient = class {
   constructor(options) {
     this.options = options;
@@ -639,15 +649,34 @@ var GuardServerClient = class {
     let work = this.registering.get(key);
     if (!work) {
       work = (async () => {
-        const response = await this.options.transport({ method: "POST", url: `${server}/v1/register`, body: { discordId: account, publicKey }, timeoutMs: 15e3 });
+        const profile = this.profile(account);
+        const response = await this.options.transport({ method: "POST", url: `${server}/v1/register`, body: { discordId: account, publicKey, ...profile }, timeoutMs: 15e3 });
         if (response.status !== 200 || typeof response.body?.token !== "string") throw this.failure(response);
-        const credential = { server, token: response.body.token, publicKey };
+        const credential = { server, token: response.body.token, publicKey, ...profile ? { profile: JSON.stringify(profile) } : {} };
         await this.options.credentials.set(account, credential);
         return credential;
       })().finally(() => this.registering.delete(key));
       this.registering.set(key, work);
     }
     return work;
+  }
+  profile(account) {
+    return this.options.account() === account ? cleanProfile(this.options.profile?.()) : void 0;
+  }
+  /** Tells the server your current name and username when they changed since last time. Only for a device that
+   * already uses the server: it never signs up a new device just for this. */
+  async syncProfile() {
+    const account = this.options.account();
+    if (!account) return false;
+    const saved = await this.options.credentials.get(account);
+    if (!saved || saved.server !== serverUrl(this.options.server())) return false;
+    const profile = this.profile(account);
+    const key = profile && JSON.stringify(profile);
+    if (!profile || saved.profile === key) return false;
+    await this.call("PATCH", "/v1/me", profile);
+    const latest = await this.options.credentials.get(account);
+    if (latest && this.options.account() === account) await this.options.credentials.set(account, { ...latest, profile: key });
+    return true;
   }
   failure(response) {
     if (response.status === 0) return new GuardServerError(0, "Can't reach the Personal Guards server. Check your internet connection.");
@@ -996,7 +1025,9 @@ var GuardService = class {
       },
       server: () => data.value.guardServer || DEFAULT_GUARD_SERVER,
       account: () => this.current() ?? void 0,
-      publicKey: async () => publicKeyString(await getGuardKeys())
+      publicKey: async () => publicKeyString(await getGuardKeys()),
+      // only what Discord already has loaded for you; nothing is asked from Discord
+      profile: () => bridge.currentProfile?.()
     });
     this.poller = new GuardPoller({
       client: this.client,
@@ -1060,6 +1091,12 @@ var GuardService = class {
   async start() {
     this.poller.reset();
     await this.refresh();
+    this.syncProfile();
+  }
+  /** sends your name and username to the server if they changed (only on a device that already uses the server) */
+  syncProfile() {
+    void this.client.syncProfile().catch(() => {
+    });
   }
   async onEvents(events) {
     let changed = false;
@@ -3606,6 +3643,9 @@ module.exports = class FriendsInVoice {
       };
       this.bridge.dispatcher.subscribe("CONNECTION_OPEN", onConnect);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CONNECTION_OPEN", onConnect));
+      const onProfile = () => this.guards.syncProfile();
+      this.bridge.dispatcher.subscribe("CURRENT_USER_UPDATE", onProfile);
+      this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("CURRENT_USER_UPDATE", onProfile));
       this.bridge.dispatcher.subscribe("LOGOUT", onLogout);
       this.unsubscribers.push(() => this.bridge.dispatcher.unsubscribe("LOGOUT", onLogout));
       this.bridge.dispatcher.subscribe("VOICE_STATE_UPDATES", onVoice);

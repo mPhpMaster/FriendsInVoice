@@ -25,7 +25,7 @@ import { GuardCodeCard } from "./personalGuardsCodes";
 import { GuardNotificationHost } from "./personalGuardsNotice";
 import { isGuardMessage } from "./personalGuardsProtocol";
 import { clearGuardRuntime, installGuardCommandHandler } from "./personalGuardsRuntime";
-import { startGuardServer, stopGuardServer, updateGuardListening } from "./personalGuardsServer";
+import { startGuardServer, stopGuardServer, syncGuardProfile, updateGuardListening } from "./personalGuardsServer";
 import { PersonalGuardsTab } from "./personalGuardsTab";
 import { settings } from "./pluginSettings";
 import { SmartReplies } from "./smartReplies";
@@ -41,7 +41,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.22.0";
+const VERSION = "1.22.1";
 const DONATE_URL = "https://paypal.me/mfsafadi";
 
 const cl = classNameFactory("vc-fiv-");
@@ -425,6 +425,10 @@ export default definePlugin({
             void startGuardServer();
             setTimeout(() => void showWhatsNew(VERSION), 3000);
             offerAutoStatus();
+        },
+        CURRENT_USER_UPDATE() {
+            // you changed your own name or username; the server gets the new one
+            syncGuardProfile();
         },
         LOGOUT() {
             stopGuardServer();
