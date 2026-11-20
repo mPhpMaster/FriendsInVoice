@@ -14,7 +14,7 @@ export { getUpdateStatus, installUpdate } from "./updateInstaller";
 // Personal Guards server requests run here too: Discord's page can't reach other sites, and this way Discord
 // never sees them. Only https addresses (or localhost while testing) are allowed.
 export async function guardRequest(_: IpcMainInvokeEvent, method: string, url: string, token: string | undefined, body: unknown, timeoutMs: number) {
-    if (!["GET", "POST", "PATCH", "DELETE"].includes(method) ||
+    if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method) ||
         !(/^https:\/\/[^/\s]+\/(v1\/|health)/i.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url)))
         return { status: 0, body: { error: "Blocked request." } };
     try {

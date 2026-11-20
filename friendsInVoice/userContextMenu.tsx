@@ -6,9 +6,10 @@
 
 import type { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import type { User } from "@vencord/discord-types";
-import { Menu, UserStore } from "@webpack/common";
+import { Menu, showToast, UserStore } from "@webpack/common";
 
 import { inList, selfMenuItems, settings, toggleInList } from ".";
+import { refreshName } from "./nameCache";
 import { openGuardModal } from "./personalGuardsModal";
 import { GUARD_ACTIONS, GUARD_VERBS } from "./personalGuardsProtocol";
 import { guardDisplayName, hasGuardKey, sendGuardCommand, sharesVoice } from "./personalGuardsRuntime";
@@ -45,6 +46,10 @@ export const UserContextPatch: NavContextMenuPatchCallback = (children, { user }
             action={() => toggleInList("hidden", user.id)} />
         <Menu.MenuItem id="vc-fiv-blacklist" label={blocked ? "Remove from Run away" : "Add to Run away"}
             color={blocked ? undefined : "danger"} action={() => toggleInList("blacklist", user.id)} />
+        <Menu.MenuItem id="vc-fiv-refresh-name" label="Refresh name"
+            action={async () => showToast(await refreshName(user.id)
+                ? { text: "Name updated.", variant: "success" }
+                : { text: "Couldn't get the name from Discord.", variant: "critical" })} />
         <Menu.MenuItem id="vc-fiv-personal-guards" label={isGuardian ? "Personal Guard settings…" : "Make Personal Guard…"}
             action={() => openGuardModal(user.id)} />
     </Menu.MenuGroup>);

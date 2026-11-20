@@ -105,6 +105,14 @@ Turn on **Status suggestions** (in the plugin settings, or right-click yourself 
 | Not in any call | **Invisible** *(changeable)* |
 
 It asks 10 seconds after you join, leave or move between calls (so hopping between rooms gives one suggestion, not many), only when your status is different, and again when Discord starts. Pick both statuses (Online, Idle, Do Not Disturb or Invisible) in the plugin settings, for example *Do Not Disturb* in calls and *Online* otherwise. It's off by default.
+### 🔄 Sync between devices
+
+Set a **Sync passphrase** (8+ characters) in the plugin settings, and use the same one on your other devices. My list, the alert lists, Run away, Hidden, the Log and saved names then sync through the Friends in Voice server. Everything is encrypted on your computer first, so the server only stores an unreadable blob: it never sees the passphrase, your Discord ID, names or the Log. Sync talks only to that server, never to Discord. It runs when Discord starts, a minute after something changes, and every 15 minutes. Personal Guards keys stay on each device. Leave the passphrase empty to keep everything on this computer.
+
+### 🏷️ Saved names
+
+People Discord hasn't loaded (for example someone in your Log who isn't in a server with you) are looked up once, then their name and avatar are saved and shown from the saved copy. To get a fresh name, right-click them → **Refresh name**.
+
 ### Updates
 
 The plugin checks GitHub for new releases (at startup and every 6 hours). On Windows, macOS and Linux, click the new-version notification to download the package from this repository's GitHub Release, verify its SHA-256 digest, install the plugin source, build Vencord, and restart Discord. Your plugin settings and other plugins stay in place. A failed build restores the previous source and tries to rebuild it. You need writable Vencord source and pnpm available to Discord. You can also click **Check for updates** at the bottom of the page. The check can be turned off in the plugin settings. Versions before v1.9.0, and Linux versions before v1.18.0, need one manual update to gain one-click updating.
