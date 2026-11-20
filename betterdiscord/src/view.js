@@ -12,6 +12,9 @@ const TABS = [
     ["runaway", "Run Away"], ["guards", "Personal Guards"], ["replies", "Smart replies"], ["log", "Log"]
 ];
 
+/** how long Shift + F12 shows the hidden launcher */
+export const PEEK_MS = 5000;
+
 export class Dashboard {
     constructor(api, bridge, data, version) {
         this.api = api;
@@ -22,33 +25,38 @@ export class Dashboard {
         this.shade = null;
         this.onKey = event => {
             if (event.key === "Escape") this.close();
-            // Shift + F12 shows or hides the launcher; everything else keeps working while it's hidden
+            // Shift + F12 opens (or closes) the dashboard and shows the hidden launcher for 5 seconds
             if (event.key === "F12" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) {
                 event.preventDefault();
                 event.stopPropagation();
-                this.toggleLauncher();
+                if (this.shade) this.close(); else this.open();
+                this.peek();
             }
         };
     }
     start() {
         this.api.DOM.addStyle(STYLE);
         this.launcher = button("🔊 Friends In Voice", () => this.open(), "fivbd-launch");
-        this.launcher.hidden = !!this.data.value.hideButton;
+        this.peekTimer = null;
+        this.syncLauncher();
         document.body.append(this.launcher);
         document.addEventListener("keydown", this.onKey, true);
     }
     stop() {
         this.close();
+        clearTimeout(this.peekTimer);
         this.launcher?.remove();
         document.removeEventListener("keydown", this.onKey, true);
         this.api.DOM.removeStyle();
     }
-    toggleLauncher() {
-        const hide = !this.data.value.hideButton;
-        this.data.set("hideButton", hide);
-        if (this.launcher) this.launcher.hidden = hide;
-        if (hide) this.close();
-        this.api.UI.showToast(hide ? "Friends In Voice button hidden. Press Shift + F12 to show it." : "Friends In Voice button shown.", { type: "info" });
+    /** hidden unless "Always hide the button" is off, or for 5 seconds after Shift + F12 */
+    syncLauncher(peeking = false) {
+        if (this.launcher) this.launcher.hidden = !!this.data.value.alwaysHideButton && !peeking;
+    }
+    peek() {
+        clearTimeout(this.peekTimer);
+        this.syncLauncher(true);
+        this.peekTimer = setTimeout(() => { this.peekTimer = null; this.syncLauncher(); }, PEEK_MS);
     }
     error(error) {
         this.api.UI.showToast(error instanceof Error ? error.message : String(error), { type: "error" });
