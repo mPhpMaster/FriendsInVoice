@@ -28,7 +28,9 @@ function currentAccount(): string | undefined {
 }
 
 export const guardClient = new GuardServerClient({
-    transport: request => Native.guardRequest(request.method, request.url, request.token, request.body, request.timeoutMs),
+    // settings values are proxies, which IPC can't clone ("An object could not be cloned"): send plain data
+    transport: request => Native.guardRequest(request.method, request.url, request.token,
+        request.body === undefined ? undefined : JSON.parse(JSON.stringify(request.body)), request.timeoutMs),
     credentials: {
         get: id => DataStore.get<GuardCredential>(credentialKey(id)),
         set: (id, credential) => credential ? DataStore.set(credentialKey(id), credential) : DataStore.del(credentialKey(id)),

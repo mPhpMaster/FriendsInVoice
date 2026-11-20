@@ -80,7 +80,8 @@ export function syncNow(manual = false): Promise<void> {
         await loadMeta(account);
         try {
             const merged = await syncOnce({
-                transport: request => Native.guardRequest(request.method, request.url, request.token, request.body, request.timeoutMs),
+                transport: request => Native.guardRequest(request.method, request.url, request.token,
+                    request.body === undefined ? undefined : JSON.parse(JSON.stringify(request.body)), request.timeoutMs),
                 server: settings.store.guardServer,
                 keys: await keysFor(account),
                 local: localData(),
