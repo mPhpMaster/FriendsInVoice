@@ -75,7 +75,7 @@ Change or remove access any time from the same menu (**Personal Guard settingsâ€
 - Your client only listens to the server while you're in voice and have a guard, or while an invite code is open. Otherwise it sends nothing.
 - Invites from versions before 1.19 were DM messages and no longer work: pair again with a code once.
 
-The server is in [`server/`](server) (Node.js, no dependencies) if you want to run your own.
+The server's code is kept in a separate private repository. The plugin talks to it only through the small HTTPS API described above.
 
 ### ðŸ’¬ Smart replies in DMs
 
