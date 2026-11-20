@@ -36,7 +36,9 @@ export class GuardService {
             },
             server: () => data.value.guardServer || DEFAULT_GUARD_SERVER,
             account: () => this.current() ?? undefined,
-            publicKey: async () => publicKeyString(await getGuardKeys())
+            publicKey: async () => publicKeyString(await getGuardKeys()),
+            // only what Discord already has loaded for you; nothing is asked from Discord
+            profile: () => bridge.currentProfile?.()
         });
         this.poller = new GuardPoller({
             client: this.client,
@@ -78,7 +80,9 @@ export class GuardService {
         })();
         return this.refreshing;
     }
-    async start() { this.poller.reset(); await this.refresh(); }
+    async start() { this.poller.reset(); await this.refresh(); this.syncProfile(); }
+    /** sends your name and username to the server if they changed (only on a device that already uses the server) */
+    syncProfile() { void this.client.syncProfile().catch(() => { }); }
     async onEvents(events) {
         let changed = false;
         for (const event of events) {

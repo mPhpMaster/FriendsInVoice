@@ -36,7 +36,17 @@ export const guardClient = new GuardServerClient({
     server: () => settings.store.guardServer,
     account: currentAccount,
     publicKey: async () => publicKeyString(await getGuardKeys()),
+    // only what Discord already has loaded for you; nothing is asked from Discord
+    profile: () => {
+        const me = UserStore.getCurrentUser();
+        return me ? { name: (me as any).globalName ?? me.username, username: me.username } : undefined;
+    },
 });
+
+/** sends your name and username to the server if they changed (only on a device that already uses the server) */
+export function syncGuardProfile() {
+    void guardClient.syncProfile().catch(() => { });
+}
 
 const poller = new GuardPoller({
     client: guardClient,
@@ -100,6 +110,7 @@ export async function startGuardServer() {
     poller.reset();
     await loadAccount();
     await refreshGuardPairs();
+    syncGuardProfile();
 }
 
 export function stopGuardServer() {

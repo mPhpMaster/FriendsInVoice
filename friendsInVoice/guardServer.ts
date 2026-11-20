@@ -35,6 +35,13 @@ export interface GuardCredential {
     server: string;
     token: string;
     publicKey: string;
+    /** the name and username last sent to the server, so they're only sent again when they change */
+    profile?: string;
+}
+
+export interface GuardProfile {
+    name?: string;
+    username?: string;
 }
 
 export interface GuardCredentials {
@@ -118,6 +125,17 @@ export interface GuardClientOptions {
     server(): string;
     account(): string | undefined;
     publicKey(): Promise<string>;
+    /** your own name and username, from what Discord already has loaded (no Discord requests) */
+    profile?(): GuardProfile | undefined;
+}
+
+const clip = (value: unknown) => typeof value === "string" && value.trim() ? value.trim().slice(0, 64) : undefined;
+
+/** the profile as it's sent to the server; undefined when there's nothing to send */
+export function cleanProfile(profile: GuardProfile | undefined): GuardProfile | undefined {
+    const name = clip(profile?.name), username = clip(profile?.username);
+    if (!name && !username) return undefined;
+    return { ...(name ? { name } : {}), ...(username ? { username } : {}) };
 }
 
 export class GuardServerClient {
@@ -134,15 +152,36 @@ export class GuardServerClient {
         let work = this.registering.get(key);
         if (!work) {
             work = (async () => {
-                const response = await this.options.transport({ method: "POST", url: `${server}/v1/register`, body: { discordId: account, publicKey }, timeoutMs: 15_000 });
+                const profile = this.profile(account);
+                const response = await this.options.transport({ method: "POST", url: `${server}/v1/register`, body: { discordId: account, publicKey, ...profile }, timeoutMs: 15_000 });
                 if (response.status !== 200 || typeof response.body?.token !== "string") throw this.failure(response);
-                const credential = { server, token: response.body.token, publicKey };
+                const credential: GuardCredential = { server, token: response.body.token, publicKey, ...(profile ? { profile: JSON.stringify(profile) } : {}) };
                 await this.options.credentials.set(account, credential);
                 return credential;
             })().finally(() => this.registering.delete(key));
             this.registering.set(key, work);
         }
         return work;
+    }
+
+    private profile(account: string): GuardProfile | undefined {
+        return this.options.account() === account ? cleanProfile(this.options.profile?.()) : undefined;
+    }
+
+    /** Tells the server your current name and username when they changed since last time. Only for a device that
+     * already uses the server: it never signs up a new device just for this. */
+    async syncProfile(): Promise<boolean> {
+        const account = this.options.account();
+        if (!account) return false;
+        const saved = await this.options.credentials.get(account);
+        if (!saved || saved.server !== serverUrl(this.options.server())) return false;
+        const profile = this.profile(account);
+        const key = profile && JSON.stringify(profile);
+        if (!profile || saved.profile === key) return false;
+        await this.call("PATCH", "/v1/me", profile);
+        const latest = await this.options.credentials.get(account);
+        if (latest && this.options.account() === account) await this.options.credentials.set(account, { ...latest, profile: key });
+        return true;
     }
 
     private failure(response: GuardResponse): GuardServerError {
