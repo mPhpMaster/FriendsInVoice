@@ -1,50 +1,52 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Friends in Voice — تثبيت</title>
-<meta name="description" content="Friends in Voice: صفحة تشوف فيها أصحابك بأي روم صوتي، مع تنبيهات وحرّاس شخصيين. إضافة لـ Vencord و BetterDiscord.">
+<title>Friends in Voice: install</title>
+<meta name="description" content="Friends in Voice: see which voice rooms your friends are in, with alerts and Personal Guards. A plugin for Vencord and BetterDiscord.">
 <link rel="stylesheet" href="/site.css">
 </head>
 <body>
+<button class="lang" data-lang-toggle>العربية</button>
 <main>
   <header>
     <h1>🔊 Friends in Voice</h1>
-    <p>صفحة تشوف فيها أصحابك بأي روم صوتي ومين معهم، وتدخل عندهم بضغطة. فيها كمان تنبيهات، وقائمة Run away، وسجل، والحرّاس الشخصيين.</p>
+    <p data-i18n="intro">A page that shows which voice rooms your friends are in and who's with them, with one-click join. It also has alerts, a Run away list, a Log and Personal Guards.</p>
   </header>
 
   <section class="card">
     <h2>Windows (Vencord)</h2>
-    <p>نزّل المثبّت وافتحه. هو يجيب آخر إصدار، ويثبّت Vencord إذا ما كان عندك، ويضيف الإضافة.</p>
-    <a class="button" href="/FriendsInVoice-Installer.bat" download>⬇️ تحميل المثبّت (Windows)</a>
-    <p class="muted">أو الصق هذا الأمر في PowerShell:</p>
+    <p data-i18n="winIntro">Download the installer and open it. It gets the newest release, installs Vencord if you don't have it, and adds the plugin.</p>
+    <a class="button" href="/FriendsInVoice-Installer.bat" download data-i18n="winButton">⬇️ Download the installer (Windows)</a>
+    <p class="muted" data-i18n="winOr">Or paste this in PowerShell:</p>
     <pre dir="ltr"><code>irm https://friendsinvoice.sarhsoft.com/install.ps1 | iex</code></pre>
-    <p class="muted">Windows ممكن يحذّرك لأن الملف غير موقّع: اضغط «More info» ثم «Run anyway».</p>
+    <p class="muted" data-i18n="winWarning">Windows may warn you because the file isn't signed: click "More info", then "Run anyway".</p>
   </section>
 
   <section class="card">
-    <h2>macOS و Linux (Vencord)</h2>
-    <p>افتح Terminal والصق:</p>
+    <h2 data-i18n="unixTitle">macOS and Linux (Vencord)</h2>
+    <p data-i18n="unixIntro">Open Terminal and paste:</p>
     <pre dir="ltr"><code>curl -fsSL https://friendsinvoice.sarhsoft.com/install.sh | bash</code></pre>
   </section>
 
   <section class="card">
     <h2>BetterDiscord</h2>
-    <p>نزّل ملف الإضافة وحطه في مجلد الإضافات حق BetterDiscord، وبعدين فعّلها.</p>
+    <p data-i18n="bdIntro">Download the plugin file, put it in BetterDiscord's plugins folder, then enable it.</p>
     <a class="button ghost" href="https://github.com/mPhpMaster/FriendsInVoice/releases/latest/download/FriendsInVoice.plugin.js">⬇️ FriendsInVoice.plugin.js</a>
   </section>
 
   <section class="card">
-    <h2>الأمان</h2>
+    <h2 data-i18n="safetyTitle">Safety</h2>
     <ul>
-      <li>الإضافة ما تسوي أي طلبات لديسكورد بالخلفية.</li>
-      <li>الحرّاس الشخصيين يتربطون بكود، والأوامر مشفّرة من طرف لطرف عبر هذا السيرفر. ما ينرسل أي توكن ديسكورد.</li>
-      <li>المثبّت ينزّل الإصدار من <a href="https://github.com/mPhpMaster/FriendsInVoice/releases/latest">صفحة الإصدارات في GitHub</a>، والكود كله مفتوح.</li>
+      <li data-i18n="safety1">The plugin makes no Discord requests in the background.</li>
+      <li data-i18n="safety2">Personal Guards pair with a code, and commands are end-to-end encrypted through this server. No Discord token is ever sent.</li>
+      <li><span data-i18n="safety3">The installer downloads the release from</span> <a href="https://github.com/mPhpMaster/FriendsInVoice/releases/latest" data-i18n="safety3link">GitHub releases</a><span data-i18n="safety3end">, and all the code is open.</span></li>
     </ul>
   </section>
 
   <footer class="muted"><a href="https://github.com/mPhpMaster/FriendsInVoice">GitHub</a> · Friends in Voice</footer>
 </main>
+<script src="/site.js"></script>
 </body>
 </html>

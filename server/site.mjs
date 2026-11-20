@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const FILES = {
     "/": ["index.html", "text/html; charset=utf-8"],
     "/site.css": ["site.css", "text/css; charset=utf-8"],
+    "/site.js": ["site.js", "text/javascript; charset=utf-8"],
     "/install.ps1": ["install.ps1", "text/plain; charset=utf-8"],
     "/install.sh": ["install.sh", "text/plain; charset=utf-8"],
     "/FriendsInVoice-Installer.bat": ["FriendsInVoice-Installer.bat", "application/octet-stream", "attachment"],
@@ -28,7 +29,7 @@ export function createSite(directory = fileURLToPath(new URL("./public/", import
         response.writeHead(200, {
             "content-type": file.type, "content-length": file.body.length, "cache-control": "public, max-age=300",
             "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
-            "content-security-policy": "default-src 'none'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
+            "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
             ...(file.disposition ? { "content-disposition": file.disposition } : {}),
         });
         response.end(request.method === "HEAD" ? undefined : file.body);
