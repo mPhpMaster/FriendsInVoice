@@ -1,4 +1,5 @@
 export const STYLE = `
+.fivbd-launch[hidden]{display:none}
 .fivbd-launch{position:fixed;bottom:82px;left:76px;z-index:9000;padding:8px 11px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--background-floating);color:var(--text-normal);cursor:pointer;box-shadow:0 4px 16px #0005}
 body.fivbd-open iframe[src*="discordsays.com"],body.fivbd-open [class*="pictureInPicture"]:has(iframe){visibility:hidden!important}
 .fivbd-shade{position:fixed;inset:0;z-index:10000;background:#0009;display:flex;align-items:center;justify-content:center;padding:18px}

@@ -82,6 +82,11 @@ export const settings = definePluginSettings({
         description: "Personal Guards: apply your guardians' commands right away, without asking you first (off: you get an Allow button and nothing happens until you click it)",
         default: false,
     },
+    hideButton: {
+        type: OptionType.BOOLEAN,
+        description: "Hide the Friends in Voice button in the server list (Shift + F12 shows or hides it)",
+        default: false,
+    },
     guardServer: {
         type: OptionType.STRING,
         description: "Personal Guards server (pairing codes and encrypted guard commands go here, never through Discord). Leave it as is unless you run your own",

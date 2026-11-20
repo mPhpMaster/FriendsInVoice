@@ -20,19 +20,35 @@ export class Dashboard {
         this.version = version;
         this.tab = "voice";
         this.shade = null;
-        this.onKey = event => { if (event.key === "Escape") this.close(); };
+        this.onKey = event => {
+            if (event.key === "Escape") this.close();
+            // Shift + F12 shows or hides the launcher; everything else keeps working while it's hidden
+            if (event.key === "F12" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.toggleLauncher();
+            }
+        };
     }
     start() {
         this.api.DOM.addStyle(STYLE);
         this.launcher = button("🔊 Friends In Voice", () => this.open(), "fivbd-launch");
+        this.launcher.hidden = !!this.data.value.hideButton;
         document.body.append(this.launcher);
-        document.addEventListener("keydown", this.onKey);
+        document.addEventListener("keydown", this.onKey, true);
     }
     stop() {
         this.close();
         this.launcher?.remove();
-        document.removeEventListener("keydown", this.onKey);
+        document.removeEventListener("keydown", this.onKey, true);
         this.api.DOM.removeStyle();
+    }
+    toggleLauncher() {
+        const hide = !this.data.value.hideButton;
+        this.data.set("hideButton", hide);
+        if (this.launcher) this.launcher.hidden = hide;
+        if (hide) this.close();
+        this.api.UI.showToast(hide ? "Friends In Voice button hidden. Press Shift + F12 to show it." : "Friends In Voice button shown.", { type: "info" });
     }
     error(error) {
         this.api.UI.showToast(error instanceof Error ? error.message : String(error), { type: "error" });
