@@ -41,7 +41,7 @@ import { REPO_URL, showWhatsNew } from "./whatsNew";
 export { inList, isOnline, toggleInList } from "./notifications";
 export { settings } from "./pluginSettings";
 
-const VERSION = "1.24.0";
+const VERSION = "1.24.1";
 const ToggleNative = VencordNative.pluginHelpers.FriendsInVoice as PluginNative<typeof import("./native")>;
 
 // Restarts Discord without Vencord. A desktop shortcut brings it back (the plugin can't run while Vencord is off).

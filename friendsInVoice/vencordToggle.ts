@@ -65,9 +65,30 @@ function powershellArgs(file: string, mode: "enable" | "disable", exe: string, r
 }
 
 /** A desktop shortcut that runs the script with -Mode enable, so Vencord can come back while it's off */
+const quote = (value: string) => value.replace(/'/g, "''");
+const commandArgs = (args: string[]) => args.map(arg => arg.includes(" ") || arg.includes("\\") ? `"${arg}"` : arg).join(" ");
+
+function run(command: string, timeoutMs = 15_000): Promise<number | null> {
+    return new Promise(resolve => {
+        const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { windowsHide: true });
+        const timer = setTimeout(() => { child.kill(); resolve(null); }, timeoutMs);
+        child.on("exit", code => { clearTimeout(timer); resolve(code); });
+        child.on("error", () => { clearTimeout(timer); resolve(null); });
+    });
+}
+
+/**
+ * Starts the script through Windows (WMI) instead of as Discord's child: Discord closes every process it started
+ * when it quits, which killed the script before it could swap the files and open Discord again.
+ */
+async function launchOutsideDiscord(args: string[]): Promise<boolean> {
+    const commandLine = `powershell.exe ${commandArgs(args)}`;
+    const code = await run(`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${quote(commandLine)}' }; exit $r.ReturnValue`);
+    return code === 0;
+}
+
 function shortcutScript(file: string, exe: string, root: string) {
-    const quote = (value: string) => value.replace(/'/g, "''");
-    const args = powershellArgs(file, "enable", exe, root).map(arg => arg.includes(" ") || arg.includes("\\") ? `"${arg}"` : arg).join(" ");
+    const args = commandArgs(powershellArgs(file, "enable", exe, root));
     return [
         "$shell = New-Object -ComObject WScript.Shell",
         `$link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) '${quote(basename(exe, ".exe"))} + Vencord.lnk'))`,
@@ -89,9 +110,10 @@ export async function disableVencord(_: IpcMainInvokeEvent) {
         const file = scriptPath();
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, TOGGLE_SCRIPT, "utf8");
-        const shortcut = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", shortcutScript(file, exe, root)], { windowsHide: true });
-        await new Promise(resolve => { shortcut.on("exit", resolve); shortcut.on("error", resolve); setTimeout(resolve, 8000); });
-        spawn("powershell.exe", powershellArgs(file, "disable", exe, root), { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        await run(shortcutScript(file, exe, root));
+        // only quit when the script is surely running on its own; otherwise Discord would just close
+        if (!await launchOutsideDiscord(powershellArgs(file, "disable", exe, root)))
+            return { ok: false, error: "Windows didn't start the helper script, so Discord was left running. Nothing changed." };
         setTimeout(() => app.quit(), 500);
         return { ok: true };
     } catch (e: any) {
