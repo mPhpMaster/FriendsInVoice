@@ -4,7 +4,7 @@ import { indexedDB } from "fake-indexeddb";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createApp, GuardStore } from "../../server/server.mjs";
+import { fakeGuardServer } from "./fakeGuardServer.mjs";
 import { DataStore } from "../src/data.js";
 import { memoryStore } from "./memoryStore.mjs";
 
@@ -28,18 +28,15 @@ async function data(id, server) {
 test("pairing with a code and a guard command go only through the Friends in Voice server", async () => {
     const previous = globalThis.indexedDB;
     globalThis.indexedDB = indexedDB;
-    const server = createApp({ store: new GuardStore(null) });
-    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-    const base = `http://127.0.0.1:${server.address().port}`;
+    const server = fakeGuardServer("http://127.0.0.1:1");
+    const { base } = server;
     const services = [];
     try {
         const { GuardService, codeFromText } = await modules();
         const urls = [], drafts = [], applied = [], notices = [];
         const transport = async ({ method, url, token, body }) => {
             urls.push(url);
-            const response = await fetch(url, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-                body: body === undefined ? undefined : JSON.stringify(body) });
-            return { status: response.status, body: await response.json() };
+            return server.transport({ method, url, token, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) });
         };
         const api = { UI: { showToast() {}, showNotice: (text, options) => notices.push({ text, options }) } };
         const bridge = me => ({ currentId: () => me, name: id => id, myVoiceChannel: () => "voice", sharesVoice: () => true,
@@ -86,8 +83,6 @@ test("pairing with a code and a guard command go only through the Friends in Voi
         assert.ok(urls.length > 0 && urls.every(url => url.startsWith(base)), "no request goes to Discord");
     } finally {
         for (const service of services) service.stop();
-        server.closeAllConnections?.();
-        server.close();
         globalThis.indexedDB = previous;
     }
 });
