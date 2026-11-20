@@ -7,8 +7,8 @@ const SWITCHES = [
     ["smartRepliesAi", "Enable the optional Claude reply button"],
     ["checkForUpdates", "Check GitHub for BetterDiscord plugin releases"],
     ["showWhatsNew", "After the plugin updates, show what's new when Discord starts"],
-    ["autoStatus", "Auto switch status: change your status when you join or leave a call"],
-    ["hideButton", "Hide the Friends In Voice button (Shift + F12 shows or hides it)"],
+    ["autoStatus", "Status suggestions: when you join or leave a call, ask if you want to change your status (nothing changes until you click)"],
+    ["alwaysHideButton", "Keep the Friends In Voice button hidden (Shift + F12 opens the dashboard and shows the button for 5 seconds)"],
     ["autoAllowGuardCommands", "Personal Guards: apply guardians' commands right away, without asking first (off: you get an Allow button)"]
 ];
 const STATUS_LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
@@ -26,15 +26,15 @@ export function settingsPanel(view) {
         input.addEventListener("change", () => {
             view.data.set(key, input.checked);
             if (key === "autoStatus") view.autoStatus?.apply();
-            if (key === "hideButton" && view.launcher) view.launcher.hidden = input.checked;
+            if (key === "alwaysHideButton") view.syncLauncher?.();
             view.render();
         });
         add(label, input, element("span", "", title));
         root.append(label);
     }
     for (const [key, title] of [
-        ["statusInCall", "Auto switch status: your status while you're in a voice channel or call"],
-        ["statusOutsideCall", "Auto switch status: your status when you're not in a call"]
+        ["statusInCall", "Status suggestions: the status to suggest in a call"],
+        ["statusOutsideCall", "Status suggestions: the status to suggest outside calls"]
     ]) {
         const label = element("label");
         label.style.alignItems = "flex-start";

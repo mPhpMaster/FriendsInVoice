@@ -1,30 +1,38 @@
-/** after joining or leaving voice, wait this long for things to settle before changing the status */
+/** after joining or leaving voice, wait this long for things to settle before asking */
 export const AUTO_STATUS_DELAY = 10_000;
-/** at most this many automatic status changes in any minute */
-export const AUTO_STATUS_PER_MINUTE = 3;
+const LABELS = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", invisible: "Invisible" };
 
-/** Auto switch status: one status while you're in a call, another when you're not */
+/**
+ * Status suggestions: when you join or leave a call, a notice asks if you want the status you picked.
+ * Nothing changes until you click it; the plugin never changes your status by itself.
+ */
 export class AutoStatus {
-    constructor(api, bridge, data, timers = { set: setTimeout, clear: clearTimeout, now: Date.now }) {
+    constructor(api, bridge, data, timers = { set: setTimeout, clear: clearTimeout }) {
         this.api = api;
         this.bridge = bridge;
         this.data = data;
         this.timers = timers;
         this.pending = null;
-        this.writes = [];
+        this.lastOffer = "";
     }
-    /** only writes when the status actually changes, and at most 3 times a minute */
+    /** shows the suggestion for being in or out of a call, once, and only when your status differs */
     apply(inCall = !!this.bridge.myVoiceChannel()) {
         const { autoStatus, statusInCall, statusOutsideCall } = this.data.value;
         if (!autoStatus || !this.bridge.currentId()) return;
-        const now = this.timers.now();
-        this.writes = this.writes.filter(time => now - time < 60_000);
-        if (this.writes.length >= AUTO_STATUS_PER_MINUTE) return this.schedule(60_000 - (now - this.writes[0]) + 1000);
         const wanted = inCall ? statusInCall : statusOutsideCall;
-        if (this.bridge.currentStatus?.() === wanted) return;
-        this.writes.push(now);
-        void this.bridge.setStatus(wanted)
-            .catch(error => this.api.Logger.error("Auto switch status failed", error));
+        if (this.bridge.currentStatus?.() === wanted) { this.lastOffer = ""; return; }
+        if (this.lastOffer === wanted) return;
+        this.lastOffer = wanted;
+        const label = LABELS[wanted] ?? wanted;
+        this.api.UI.showNotice(`Change your status to ${label}? ${inCall ? "You're in a call." : "You're not in a call anymore."}`, {
+            timeout: 30_000,
+            buttons: [{ label: `Set ${label}`, onClick: () => this.accept(wanted) }]
+        });
+    }
+    accept(status) {
+        if (this.bridge.currentStatus?.() === status) return;
+        void this.bridge.setStatus(status)
+            .catch(error => this.api.Logger.error("Changing the status failed", error));
     }
     schedule(delay) {
         this.cancel();
@@ -34,10 +42,10 @@ export class AutoStatus {
         if (this.pending) this.timers.clear(this.pending);
         this.pending = null;
     }
-    /** quick channel hopping ends in one status change, for wherever you are 10 seconds after the last hop */
+    /** quick channel hopping ends in one suggestion, for wherever you are 10 seconds after the last hop */
     onUpdates(voiceStates) {
         if (!this.data.value.autoStatus || !Array.isArray(voiceStates)) return;
         const me = this.bridge.currentId();
-        if (voiceStates.some(state => state?.userId === me)) this.schedule(AUTO_STATUS_DELAY);
+        if (voiceStates.some(state => state?.userId === me)) { this.lastOffer = ""; this.schedule(AUTO_STATUS_DELAY); }
     }
 }

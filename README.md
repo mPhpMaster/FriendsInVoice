@@ -14,7 +14,7 @@ See at a glance **which voice rooms your friends are in, who is with them, and j
 - **Full page, not a popup**: it covers Discord's main area next to the server list. Close it with ✕, `Esc`, or by clicking anything in the server list (a server or the Discord logo, which takes you back to your DMs).
 - **Click anyone to message them, right-click for Discord's menu**: on every tab, clicking a person (in a room, a "Here because of" name, a card or a list) opens your DM with them, and right-clicking opens Discord's normal user menu (Profile, Message, Call, Add Friend, … plus this plugin's options).
 
-Press **Shift + F12** to hide or show the Friends in Voice button in the server list; everything keeps working while it's hidden.
+The Friends in Voice button is hidden by default. Press **Shift + F12** to open the page (press it again to close it); the button also shows for 5 seconds. Everything keeps working while it's hidden. To always show the button, turn off *Keep the Friends in Voice button hidden* in the plugin settings.
 
 ### 🔊 In voice (home tab)
 
@@ -95,16 +95,16 @@ Right-click **yourself** (your name in a voice room, the member list or a messag
 Both are off by default. After changing one, click the notification (or **Reload Discord to apply** in the same menu) to reload Discord. If Vencord's own **DisableCallIdle** or **CustomIdle** plugin is already on, the matching switch shows as handled by it.
 
 These don't stop a server's own bots or rules from kicking inactive people, and you'll still disconnect if your internet drops or the PC goes to sleep.
-### 👻 Auto switch status
+### 👻 Status suggestions
 
-Turn on **Auto switch status** (in the plugin settings, or right-click yourself → **Auto switch status in calls**) and your status changes by itself:
+Turn on **Status suggestions** (in the plugin settings, or right-click yourself → **Status suggestions in calls**) and you get a notification suggesting a status. Click it to change your status; the plugin never changes it by itself:
 
-| You are… | Your status becomes |
+| You are… | Suggested status |
 |---|---|
 | In a voice channel, DM call or group call | **Online** *(changeable)* |
 | Not in any call | **Invisible** *(changeable)* |
 
-It switches 10 seconds after you join, leave or move between calls (so hopping between rooms makes one change, not many), at most 3 times a minute, and checks again when Discord starts. Pick both statuses (Online, Idle, Do Not Disturb or Invisible) in the plugin settings, for example *Do Not Disturb* in calls and *Online* otherwise. It's off by default; turning it off leaves your status as it is.
+It asks 10 seconds after you join, leave or move between calls (so hopping between rooms gives one suggestion, not many), only when your status is different, and again when Discord starts. Pick both statuses (Online, Idle, Do Not Disturb or Invisible) in the plugin settings, for example *Do Not Disturb* in calls and *Online* otherwise. It's off by default.
 ### Updates
 
 The plugin checks GitHub for new releases (at startup and every 6 hours). On Windows, macOS and Linux, click the new-version notification to download the package from this repository's GitHub Release, verify its SHA-256 digest, install the plugin source, build Vencord, and restart Discord. Your plugin settings and other plugins stay in place. A failed build restores the previous source and tries to rebuild it. You need writable Vencord source and pnpm available to Discord. You can also click **Check for updates** at the bottom of the page. The check can be turned off in the plugin settings. Versions before v1.9.0, and Linux versions before v1.18.0, need one manual update to gain one-click updating.
