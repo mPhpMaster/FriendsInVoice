@@ -160,6 +160,56 @@ export class GuardStore {
         return { exportedAt: this.now(), accounts: this.accounts, pairs: this.pairs, codes: this.codes, settings: this.settings };
     }
 
+    /** The whole database as stored, except admin password hashes. */
+    adminRaw() {
+        const { admins, adminPasswordHash, ...settings } = this.settings;
+        return { accounts: this.accounts, pairs: this.pairs, codes: this.codes, settings };
+    }
+
+    /** Replaces the stored data after checking every record. Admin logins are kept as they are. */
+    adminReplace(data) {
+        const fail = message => { throw new HttpError(400, message); };
+        if (!data || typeof data !== "object" || Array.isArray(data)) fail("The data must be a JSON object.");
+        const object = (value, name) => value === undefined ? {} : value && typeof value === "object" && !Array.isArray(value) ? value : fail(`"${name}" must be an object.`);
+        const accounts = object(data.accounts, "accounts"), pairs = object(data.pairs, "pairs"), codes = object(data.codes, "codes");
+        const time = (value, where) => Number.isSafeInteger(value) && value >= 0 ? value : fail(`${where}: invalid time.`);
+        for (const [id, item] of Object.entries(accounts)) {
+            const where = `accounts.${id}`;
+            if (!/^[a-f\d]{24}$/.test(id)) fail(`${where}: invalid id.`);
+            if (!SNOWFLAKE.test(item?.discordId ?? "")) fail(`${where}: invalid discordId.`);
+            if (!PUBLIC_KEY.test(item.publicKey ?? "")) fail(`${where}: invalid publicKey.`);
+            if (!/^[a-f\d]{64}$/.test(item.tokenHash ?? "")) fail(`${where}: invalid tokenHash.`);
+            time(item.createdAt, where);
+        }
+        for (const [id, pair] of Object.entries(pairs)) {
+            const where = `pairs.${id}`;
+            if (pair?.id !== id) fail(`${where}: "id" must match its key.`);
+            if (!accounts[pair.owner] || !accounts[pair.guardian] || pair.owner === pair.guardian) fail(`${where}: owner and guardian must be two existing accounts.`);
+            if (!cleanActions(pair.actions)) fail(`${where}: invalid actions.`);
+            if (!NONCE.test(pair.nonce ?? "")) fail(`${where}: invalid nonce.`);
+            time(pair.createdAt, where);
+        }
+        for (const [code, item] of Object.entries(codes)) {
+            const where = `codes.${code}`;
+            if (normalizeCode(code) !== code) fail(`${where}: invalid code.`);
+            if (!accounts[item?.owner]) fail(`${where}: owner must be an existing account.`);
+            if (!SNOWFLAKE.test(item.guardianId ?? "")) fail(`${where}: invalid guardianId.`);
+            if (!cleanActions(item.actions)) fail(`${where}: invalid actions.`);
+            if (!NONCE.test(item.nonce ?? "")) fail(`${where}: invalid nonce.`);
+            time(item.expiresAt, where);
+        }
+        const keep = ({ discordId, publicKey, tokenHash, createdAt }) => ({ discordId, publicKey, tokenHash, createdAt });
+        this.accounts = Object.fromEntries(Object.entries(accounts).map(([id, item]) => [id, keep(item)]));
+        this.pairs = Object.fromEntries(Object.entries(pairs).map(([id, p]) => [id, { id, owner: p.owner, guardian: p.guardian, actions: cleanActions(p.actions), nonce: p.nonce, createdAt: p.createdAt }]));
+        this.codes = Object.fromEntries(Object.entries(codes).map(([code, c]) => [code, { owner: c.owner, guardianId: c.guardianId, actions: cleanActions(c.actions), nonce: c.nonce, expiresAt: c.expiresAt }]));
+        this.settings.maintenance = !!data.settings?.maintenance;
+        // everyone re-reads their pairings
+        for (const account of Object.keys(this.accounts)) this.push(account, { type: "pairs" });
+        for (const account of [...this.queues.keys()]) if (!this.accounts[account]) this.queues.delete(account);
+        this.save();
+        return { accounts: Object.keys(this.accounts).length, pairs: Object.keys(this.pairs).length, codes: Object.keys(this.codes).length };
+    }
+
     /** Deletes every account, pairing and code. Plugins register again by themselves on their next request. */
     adminWipe() {
         this.accounts = {};
@@ -378,13 +428,13 @@ class RateLimiter {
     sweep(now = Date.now()) { for (const [key, hit] of this.hits) if (now - hit.start > this.windowMs) this.hits.delete(key); }
 }
 
-function readBody(request) {
+function readBody(request, maxBytes = MAX_BODY) {
     return new Promise((resolve, reject) => {
         let size = 0;
         const chunks = [];
         request.on("data", chunk => {
             size += chunk.length;
-            if (size > MAX_BODY) { reject(new HttpError(413, "Request too large.")); request.destroy(); return; }
+            if (size > maxBytes) { reject(new HttpError(413, "Request too large.")); request.destroy(); return; }
             chunks.push(chunk);
         });
         request.on("end", () => {

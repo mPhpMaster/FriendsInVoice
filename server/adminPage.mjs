@@ -15,6 +15,8 @@ export const PAGE = `<!doctype html>
 <main id="login" hidden>
   <form id="login-form" class="card narrow">
     <h1>🛡️ <span data-i18n="title"></span></h1>
+    <label for="username" data-i18n="username"></label>
+    <input id="username" autocomplete="username" value="admin" required>
     <label for="password" data-i18n="password"></label>
     <input id="password" type="password" autocomplete="current-password" required>
     <button type="submit" data-i18n="login"></button>
@@ -24,7 +26,7 @@ export const PAGE = `<!doctype html>
 <main id="app" hidden>
   <header>
     <h1>🛡️ <span data-i18n="title"></span></h1>
-    <div class="row"><span id="updated" class="muted"></span><button id="refresh" class="ghost" data-i18n="refresh"></button><button id="logout" class="ghost" data-i18n="logout"></button></div>
+    <div class="row"><span id="me" class="muted"></span><span id="updated" class="muted"></span><button id="refresh" class="ghost" data-i18n="refresh"></button><button id="logout" class="ghost" data-i18n="logout"></button></div>
   </header>
   <p id="banner" class="banner" hidden data-i18n="maintenanceBanner"></p>
   <section id="tiles" class="tiles"></section>
@@ -33,6 +35,8 @@ export const PAGE = `<!doctype html>
     <button data-tab="accounts" data-i18n="tabAccounts"></button>
     <button data-tab="codes" data-i18n="tabCodes"></button>
     <button data-tab="logs" data-i18n="tabLogs"></button>
+    <button data-tab="admins" data-i18n="tabAdmins"></button>
+    <button data-tab="raw" data-i18n="tabRaw"></button>
     <button data-tab="control" data-i18n="tabControl"></button>
   </nav>
   <section class="card tab" id="tab-pairs"><h2 data-i18n="pairsTitle"></h2><div id="pairs"></div></section>
@@ -46,13 +50,31 @@ export const PAGE = `<!doctype html>
     <div class="row space"><h2 data-i18n="logsTitle"></h2><button id="clear-logs" class="ghost" data-i18n="clearLog"></button></div>
     <div id="logs"></div>
   </section>
+  <section class="tab" id="tab-admins" hidden>
+    <div class="card"><h2 data-i18n="adminsTitle"></h2><div id="admins"></div></div>
+    <div class="card"><h2 data-i18n="addAdmin"></h2>
+      <form id="admin-form" class="stack narrow-form">
+        <input id="new-admin-name" data-i18n-placeholder="username" autocomplete="off" required>
+        <input id="new-admin-password" type="password" data-i18n-placeholder="newPassword" autocomplete="new-password" minlength="10" required>
+        <button type="submit" data-i18n="add"></button>
+      </form></div>
+  </section>
+  <section class="card tab" id="tab-raw" hidden>
+    <div class="row space"><h2 data-i18n="rawTitle"></h2>
+      <div class="row"><button id="raw-reload" class="ghost" data-i18n="reload"></button><button id="raw-format" class="ghost" data-i18n="format"></button>
+        <label class="button-like ghost"><span data-i18n="restoreFile"></span><input id="raw-file" type="file" accept="application/json,.json" hidden></label>
+        <button id="raw-download" class="ghost" data-i18n="downloadBackup"></button><button id="raw-save" data-i18n="saveData"></button></div></div>
+    <p class="muted" data-i18n="rawHelp"></p>
+    <textarea id="raw" spellcheck="false" dir="ltr"></textarea>
+    <p id="raw-status" class="muted"></p>
+  </section>
   <section class="tab" id="tab-control" hidden>
     <div class="grid2">
       <div class="card"><h2 data-i18n="status"></h2><div id="server"></div></div>
       <div class="card"><h2 data-i18n="maintenance"></h2><p class="muted" data-i18n="maintenanceHelp"></p><button id="maintenance"></button></div>
       <div class="card"><h2 data-i18n="backup"></h2><p class="muted" data-i18n="backupHelp"></p><button id="backup" data-i18n="downloadBackup"></button></div>
       <div class="card"><h2 data-i18n="restart"></h2><p class="muted" data-i18n="restartHelp"></p><button id="restart" class="ghost" data-i18n="restartButton"></button></div>
-      <div class="card"><h2 data-i18n="password"></h2>
+      <div class="card"><h2 data-i18n="myPassword"></h2>
         <form id="password-form" class="stack">
           <input id="pw-current" type="password" data-i18n-placeholder="currentPassword" autocomplete="current-password" required>
           <input id="pw-next" type="password" data-i18n-placeholder="newPassword" autocomplete="new-password" minlength="10" required>
@@ -71,7 +93,15 @@ export const PAGE = `<!doctype html>
 export const SCRIPT = `"use strict";
 const STRINGS = {
   en: {
-    title: "Friends in Voice admin", password: "Password", login: "Log in", refresh: "Refresh", logout: "Log out",
+    title: "Friends in Voice admin", username: "Username", password: "Password", login: "Log in", signedInAs: "Signed in as ",
+    tabAdmins: "Admins", tabRaw: "All data", adminsTitle: "Admins", addAdmin: "Add an admin", add: "Add", myPassword: "My password",
+    lastLogin: "Last login", sessionsCol: "Open sessions", you: "(you)", setPassword: "Set password", rename: "Rename",
+    promptPassword: "New password for {name} (10 characters or more):", promptRename: "New username for {name}:",
+    confirmDeleteAdmin: "Delete the admin {name}? They're signed out right away.", adminAdded: "Admin added.", passwordSet: "Password changed. Their other sessions were signed out.",
+    rawTitle: "All data (JSON)", reload: "Reload", format: "Format", restoreFile: "Restore from file", saveData: "Save data",
+    rawHelp: "Every account, pairing and code exactly as stored, including token hashes. Edit and press Save data: every record is checked first, and nothing changes if one is wrong. Admin logins are managed in Admins, not here.",
+    confirmSaveRaw: "Replace all stored data with this JSON? Download a backup first if you're unsure.", rawSaved: "Saved: {accounts} accounts, {pairs} pairings, {codes} codes.",
+    badJson: "That isn't valid JSON: ", fileLoaded: "File loaded. Check it, then press Save data.", wrongLogin: "Wrong username or password.", refresh: "Refresh", logout: "Log out",
     maintenanceBanner: "⚠️ Maintenance mode is on: the API is stopped and plugins can't connect.",
     tabPairs: "Pairings", tabAccounts: "Accounts", tabCodes: "Codes", tabLogs: "Request log", tabControl: "Server control",
     pairsTitle: "Pairings (owner → guardian)", searchDiscordId: "Search by Discord ID", codesTitle: "Open invite codes",
@@ -98,7 +128,7 @@ const STRINGS = {
     type: "Type", from: "From", time: "Time", content: "Content", encrypted: "Encrypted (the server can't read it)", noEvents: "No events.",
     eventTypes: { command: "Guard command", pairs: "Pairings changed", refused: "Invite refused" },
     ip: "IP", request: "Request", statusCol: "Status", duration: "Duration", account: "Account", noLogs: "No requests logged yet.", confirmClearLog: "Clear the request log?",
-    serverRows: ["Version", "Node", "Running since", "Memory", "Data size", "Requests last hour", "Errors last hour", "Queued events", "Open connections now", "Dashboard sessions", "Password"],
+    serverRows: ["Version", "Node", "Running since", "Memory", "Data size", "Requests last hour", "Errors last hour", "Queued events", "Open connections now", "Dashboard sessions", "Admins"],
     passwordFromDashboard: "Changed in the dashboard", passwordFromFile: "From the server file",
     maintenanceOn: "Turn maintenance mode off", maintenanceOff: "Turn maintenance mode on",
     confirmMaintenance: "Turn on maintenance mode? Plugins can't use guards until you turn it off.",
@@ -108,7 +138,15 @@ const STRINGS = {
     updated: "Updated ", ago: { s: "s ago", m: "min ago", h: "h ago", d: "d ago" }
   },
   ar: {
-    title: "لوحة Friends in Voice", password: "كلمة السر", login: "دخول", refresh: "تحديث", logout: "خروج",
+    title: "لوحة Friends in Voice", username: "اسم المستخدم", password: "كلمة السر", login: "دخول", signedInAs: "داخل باسم ",
+    tabAdmins: "الأدمن", tabRaw: "كل البيانات", adminsTitle: "حسابات الأدمن", addAdmin: "إضافة أدمن", add: "إضافة", myPassword: "كلمة السر حقتي",
+    lastLogin: "آخر دخول", sessionsCol: "جلسات مفتوحة", you: "(أنت)", setPassword: "تغيير كلمة السر", rename: "تغيير الاسم",
+    promptPassword: "كلمة السر الجديدة لـ {name} (10 خانات أو أكثر):", promptRename: "الاسم الجديد لـ {name}:",
+    confirmDeleteAdmin: "حذف الأدمن {name}؟ بيطلع من اللوحة فوراً.", adminAdded: "انضاف الأدمن.", passwordSet: "تغيّرت كلمة السر، وجلساته الثانية انقفلت.",
+    rawTitle: "كل البيانات (JSON)", reload: "إعادة تحميل", format: "ترتيب", restoreFile: "استرجاع من ملف", saveData: "حفظ البيانات",
+    rawHelp: "كل الحسابات والربطات والأكواد زي ما هي محفوظة، مع هاشات التوكنات. عدّل واضغط «حفظ البيانات»: كل سجل ينفحص قبل الحفظ، وإذا فيه خطأ ما يتغيّر شي. حسابات الأدمن تُدار من تبويب الأدمن مو من هنا.",
+    confirmSaveRaw: "تستبدل كل البيانات المحفوظة بهذا الـ JSON؟ إذا مو متأكد نزّل نسخة احتياطية أول.", rawSaved: "انحفظ: {accounts} حساب، {pairs} ربط، {codes} كود.",
+    badJson: "هذا مو JSON صحيح: ", fileLoaded: "انفتح الملف. راجعه واضغط «حفظ البيانات».", wrongLogin: "اسم المستخدم أو كلمة السر غلط.", refresh: "تحديث", logout: "خروج",
     maintenanceBanner: "⚠️ وضع الصيانة شغّال: الـ API موقوف والإضافات ما تقدر تتصل.",
     tabPairs: "الربطات", tabAccounts: "الحسابات", tabCodes: "الأكواد", tabLogs: "سجل الطلبات", tabControl: "التحكم بالسيرفر",
     pairsTitle: "الربطات (مالك ← حارس)", searchDiscordId: "بحث بـ Discord ID", codesTitle: "الأكواد المفتوحة",
@@ -135,7 +173,7 @@ const STRINGS = {
     type: "النوع", from: "من", time: "الوقت", content: "المحتوى", encrypted: "مشفّر (السيرفر ما يقدر يقراه)", noEvents: "ما فيه أحداث.",
     eventTypes: { command: "أمر حارس", pairs: "تغيير ربطات", refused: "رفض دعوة" },
     ip: "IP", request: "الطلب", statusCol: "الحالة", duration: "المدة", account: "الحساب", noLogs: "ما فيه طلبات مسجّلة.", confirmClearLog: "مسح سجل الطلبات؟",
-    serverRows: ["الإصدار", "Node", "شغال من", "الذاكرة", "حجم البيانات", "طلبات آخر ساعة", "أخطاء آخر ساعة", "أحداث بالانتظار", "اتصالات مفتوحة الحين", "جلسات اللوحة", "كلمة السر"],
+    serverRows: ["الإصدار", "Node", "شغال من", "الذاكرة", "حجم البيانات", "طلبات آخر ساعة", "أخطاء آخر ساعة", "أحداث بالانتظار", "اتصالات مفتوحة الحين", "جلسات اللوحة", "الأدمن"],
     passwordFromDashboard: "متغيّرة من اللوحة", passwordFromFile: "من ملف السيرفر",
     maintenanceOn: "إيقاف وضع الصيانة", maintenanceOff: "تشغيل وضع الصيانة",
     confirmMaintenance: "تشغيل وضع الصيانة؟ الإضافات ما بتقدر تستخدم الحرّاس لين توقفه.",
@@ -147,6 +185,8 @@ const STRINGS = {
 };
 let lang = localStorage.getItem("fiv-lang") === "ar" ? "ar" : "en";
 const T = () => STRINGS[lang];
+const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
+let rawLoaded = false;
 const $ = id => document.getElementById(id);
 const ACTION_KEYS = ["mute", "deafen", "disconnect"];
 let timer, data, tab = "pairs", selected = null;
@@ -288,7 +328,7 @@ function renderControl() {
   const t = T(), s = data.server, r = t.serverRows;
   const values = [s.version, s.node, ago(s.startedAt) + " (" + when(s.startedAt) + ")", s.memoryMb + " MB",
     s.dataSize == null ? "—" : (s.dataSize / 1024).toFixed(1) + " KB", s.requestsLastHour ?? "—", s.errorsLastHour ?? "—", data.queued,
-    data.waiting, s.sessions, s.passwordFromDashboard ? t.passwordFromDashboard : t.passwordFromFile];
+    data.waiting, s.sessions, s.admins];
   table("server", ["", ""], r.map((label, i) => [label, values[i]]), "");
   const m = $("maintenance");
   m.textContent = data.settings.maintenance ? t.maintenanceOn : t.maintenanceOff;
@@ -305,7 +345,26 @@ function render() {
   if (tab === "codes") renderCodes();
   if (tab === "logs") renderLogs();
   if (tab === "control") renderControl();
+  if (tab === "admins") renderAdmins();
+  if (tab === "raw" && !rawLoaded) loadRaw();
+  $("me").textContent = data.me ? T().signedInAs + data.me + " · " : "";
   $("updated").textContent = T().updated + new Date().toLocaleTimeString(locale());
+}
+
+async function renderAdmins() {
+  const t = T();
+  let list = [];
+  try { list = await api("GET", "admins"); } catch { return; }
+  table("admins", [t.username, t.registered, t.lastLogin, t.sessionsCol, "", "", ""], list.map(a => [
+    el("span", a.username + (a.me ? " " + t.you : "")), when(a.createdAt), when(a.lastLogin), a.sessions,
+    btn(t.setPassword, "ghost small", () => { const p = prompt(fill(t.promptPassword, { name: a.username })); if (p) act("PATCH", "admins/" + encodeURIComponent(a.username), { password: p }).then(ok => ok && alert(t.passwordSet)); }),
+    btn(t.rename, "ghost small", () => { const n = prompt(fill(t.promptRename, { name: a.username }), a.username); if (n && n !== a.username) act("PATCH", "admins/" + encodeURIComponent(a.username), { username: n }); }),
+    btn(t.delete, "danger small", () => act("DELETE", "admins/" + encodeURIComponent(a.username), null, fill(t.confirmDeleteAdmin, { name: a.username })))]), "");
+}
+
+async function loadRaw() {
+  try { $("raw").value = JSON.stringify(await api("GET", "raw"), null, 2); rawLoaded = true; $("raw-status").textContent = ""; }
+  catch (e) { $("raw-status").textContent = e.message; }
 }
 
 async function load(force) {
@@ -320,7 +379,33 @@ for (const b of document.querySelectorAll("#tabs button")) b.addEventListener("c
   tab = b.dataset.tab;
   for (const other of document.querySelectorAll("#tabs button")) other.classList.toggle("active", other === b);
   for (const section of document.querySelectorAll(".tab")) section.hidden = section.id !== "tab-" + tab;
+  if (tab === "raw") rawLoaded = false;
   if (data) render();
+});
+$("admin-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (await act("POST", "admins", { username: $("new-admin-name").value.trim(), password: $("new-admin-password").value })) {
+    $("new-admin-name").value = $("new-admin-password").value = ""; alert(T().adminAdded);
+  }
+});
+$("raw-reload").addEventListener("click", loadRaw);
+$("raw-format").addEventListener("click", () => {
+  try { $("raw").value = JSON.stringify(JSON.parse($("raw").value), null, 2); $("raw-status").textContent = ""; }
+  catch (e) { $("raw-status").textContent = T().badJson + e.message; }
+});
+$("raw-download").addEventListener("click", () => { location.href = "/admin/api/backup"; });
+$("raw-file").addEventListener("change", async () => {
+  const file = $("raw-file").files[0]; if (!file) return;
+  $("raw").value = await file.text(); $("raw-file").value = ""; $("raw-status").textContent = T().fileLoaded;
+});
+$("raw-save").addEventListener("click", async () => {
+  let parsed;
+  try { parsed = JSON.parse($("raw").value); } catch (e) { $("raw-status").textContent = T().badJson + e.message; return; }
+  if (!confirm(T().confirmSaveRaw)) return;
+  try {
+    const result = await api("POST", "raw", { data: parsed });
+    $("raw-status").textContent = fill(T().rawSaved, result); rawLoaded = false; await load(true);
+  } catch (e) { $("raw-status").textContent = e.message; }
 });
 $("account-search").addEventListener("input", () => data && renderAccounts());
 $("clear-logs").addEventListener("click", () => act("DELETE", "logs", null, T().confirmClearLog));
@@ -341,8 +426,8 @@ $("password-form").addEventListener("submit", async event => {
 });
 $("login-form").addEventListener("submit", async event => {
   event.preventDefault(); $("login-error").textContent = "";
-  try { await api("POST", "login", { password: $("password").value }); $("password").value = ""; show(true); }
-  catch (e) { $("login-error").textContent = e.message === "Wrong password." ? T().wrongPassword : e.message; }
+  try { await api("POST", "login", { username: $("username").value.trim(), password: $("password").value }); $("password").value = ""; show(true); }
+  catch (e) { $("login-error").textContent = e.message === "Wrong username or password." ? T().wrongLogin : e.message; }
 });
 $("logout").addEventListener("click", async () => { try { await api("POST", "logout"); } catch {} show(false); });
 $("refresh").addEventListener("click", () => load(true));
