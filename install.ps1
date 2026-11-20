@@ -117,6 +117,22 @@ function Test-VencordSource($dir) {
     return (Get-Content $pkg -Raw) -match '"name"\s*:\s*"vencord"'
 }
 
+function Update-Vencord($dir) {
+    # An old Vencord stops working when Discord updates itself (Discord crashes and restarts in a loop),
+    # so bring an existing Vencord up to date before every build.
+    if (-not (Test-Path (Join-Path $dir ".git"))) {
+        Warn "Vencord in $dir isn't a git checkout; can't update it. If Discord won't start, delete that folder and run this again."
+        return
+    }
+    if (git -C $dir status --porcelain --untracked-files=no) {
+        Warn "Vencord in $dir has local changes; not updating it."
+        return
+    }
+    Info "Updating Vencord in $dir..."
+    git -C $dir pull --ff-only
+    if ($LASTEXITCODE) { throw "Updating Vencord failed. Run 'git -C `"$dir`" status' to see why." }
+}
+
 function Invoke-Pnpm([string[]]$pnpmArgs) {
     try { pnpm @pnpmArgs; return -not $LASTEXITCODE } catch { return $false }
 }
@@ -217,6 +233,7 @@ if ($pluginInstalled) {
         Info "Removing the plugin..."
         Remove-Item -Recurse -Force $pluginDir
         Ensure-Tools
+        Update-Vencord $VencordDir
         Build-Vencord $VencordDir
         Ok "$DisplayName was uninstalled. (Vencord itself is still installed.)"
         Restart-Discord
@@ -233,7 +250,9 @@ if ($pluginInstalled) {
 
 Ensure-Tools
 
-if (-not $vencordInstalled) {
+if ($vencordInstalled) {
+    Update-Vencord $VencordDir
+} else {
     Info "Downloading Vencord to $VencordDir..."
     git clone https://github.com/Vendicated/Vencord.git $VencordDir
     if ($LASTEXITCODE) { throw "Downloading Vencord failed." }
@@ -244,7 +263,7 @@ New-Item -ItemType Directory -Force (Split-Path $pluginDir) | Out-Null
 # start from an empty folder so files removed in this version don't linger
 if ($reinstall) { Remove-Item -Recurse -Force $pluginDir }
 New-Item -ItemType Directory -Force $pluginDir | Out-Null
-Copy-Item -Force (Join-Path $PluginSrc "*") $pluginDir
+Copy-Item -Recurse -Force (Join-Path $PluginSrc "*") $pluginDir
 
 Build-Vencord $VencordDir
 
