@@ -7,7 +7,9 @@ DOMAIN=friendsinvoice.sarhsoft.com
 INCLUDE_DIR=/etc/apache2/conf.d/userdata
 
 mkdir -p "$APP/data"
-install -m 644 "$SRC/server.mjs" "$SRC/start.mjs" "$SRC/admin.mjs" "$SRC/hash-password.mjs" "$SRC/package.json" "$APP/"
+install -m 644 "$SRC/server.mjs" "$SRC/start.mjs" "$SRC/admin.mjs" "$SRC/adminPage.mjs" "$SRC/site.mjs" "$SRC/hash-password.mjs" "$SRC/package.json" "$APP/"
+mkdir -p "$APP/public"
+install -m 644 "$SRC"/public/* "$APP/public/"
 chown -R sarhsoft:sarhsoft "$APP"
 chmod 700 "$APP/data"
 

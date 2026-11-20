@@ -13,7 +13,14 @@ Put it behind HTTPS (the plugin refuses plain `http://` except for localhost). L
 
 ## Admin dashboard
 
-`/admin` shows server health, accounts (Discord ID, last seen, whether the owner side is listening), pairings and open codes, and can remove a pairing or an account. It reads only this server's data: no Discord calls, no tokens or token hashes. It stays off until `ADMIN_PASSWORD_HASH` is set; `node hash-password.mjs < file` prints that line (empty input makes a random password and prints it to stderr). On the live server `deploy/install.sh` does this once and keeps the password in `/root/friendsinvoice-admin-password.txt` (root only). Login is limited to 10 tries per IP per 15 minutes; sessions last 12 hours in an HttpOnly, Secure, SameSite=Strict cookie.
+`/admin` has full control of this server's own data and settings:
+
+- Accounts: Discord ID, public key, last seen, listening, pairings, queued events (view or clear), delete.
+- Pairings: change allowed actions, delete. Open codes: see whole codes, cancel.
+- The last 300 API requests (IP, path, status, time, account; never bodies or tokens).
+- Maintenance mode (the `/v1` API answers 503), JSON backup download, restart, change the password, sign out other sessions, wipe everything.
+
+It never contacts Discord, and token hashes appear only in the backup file. It stays off until `ADMIN_PASSWORD_HASH` is set; `node hash-password.mjs < file` prints that line (empty input makes a random password and prints it to stderr). On the live server `deploy/install.sh` does this once and keeps the password in `/root/friendsinvoice-admin-password.txt` (root only). Login is limited to 10 tries per IP per 15 minutes; sessions last 12 hours in an HttpOnly, Secure, SameSite=Strict cookie.
 
 ## What it stores
 
